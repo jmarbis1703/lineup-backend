@@ -1,0 +1,47 @@
+# Secrets & environment files
+.env
+.env.prod
+.env.local
+.env.staging
+*.env
+
+# Docker overrides
+docker-compose.override.yml
+
+# Database & cache volumes
+postgres_data/
+redis_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+.Python
+
+# Pytest & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Alembic
+alembic/versions/__pycache__/
+
+# Deployment artefacts
+.initial_import_done
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

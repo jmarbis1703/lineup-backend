@@ -1,0 +1,118 @@
+{
+  "data": [
+    {
+      "id": 86,
+      "sport_id": 1,
+      "country_id": 462,
+      "venue_id": 214,
+      "name": "Real Madrid",
+      "short_code": "RMA",
+      "image_path": "https://cdn.sportmonks.com/images/soccer/teams/22/86.png",
+      "founded": 1902,
+      "type": "domestic",
+      "placeholder": false,
+      "last_played_at": "2026-03-02 20:00:00",
+      "squads": [
+        {
+          "player_id": 200100,
+          "team_id": 86,
+          "position_id": 24,
+          "jersey_number": 5,
+          "start": "2023-07-01",
+          "end": null,
+          "captain": 0,
+          "onloan": 0,
+          "player": {
+            "id": 200100,
+            "sport_id": 1,
+            "country_id": 17,
+            "nationality_id": 17,
+            "position_id": 24,
+            "common_name": "Bellingham",
+            "firstname": "Jude",
+            "lastname": "Bellingham",
+            "name": "Jude Bellingham",
+            "display_name": "J. Bellingham",
+            "image_path": "https://cdn.sportmonks.com/images/soccer/players/5/200100.png",
+            "height": 186,
+            "weight": 83,
+            "date_of_birth": "2003-06-29",
+            "gender": "male"
+          }
+        },
+        {
+          "player_id": 300200,
+          "team_id": 86,
+          "position_id": 27,
+          "jersey_number": 9,
+          "start": "2023-07-01",
+          "end": null,
+          "captain": 0,
+          "onloan": 0,
+          "player": {
+            "id": 300200,
+            "sport_id": 1,
+            "country_id": 39,
+            "nationality_id": 39,
+            "position_id": 27,
+            "common_name": "Benzema",
+            "firstname": "Karim",
+            "lastname": "Benzema",
+            "name": "Karim Benzema",
+            "display_name": "K. Benzema",
+            "image_path": "https://cdn.sportmonks.com/images/soccer/players/8/300200.png",
+            "height": 185,
+            "weight": 81,
+            "date_of_birth": "1987-12-19",
+            "gender": "male"
+          }
+        },
+        {
+          "player_id": 400300,
+          "team_id": 86,
+          "position_id": 25,
+          "jersey_number": 12,
+          "start": "2024-07-01",
+          "end": null,
+          "captain": 0,
+          "onloan": 0,
+          "player": {
+            "id": 400300,
+            "sport_id": 1,
+            "country_id": 462,
+            "nationality_id": 462,
+            "position_id": 25,
+            "common_name": "Valverde",
+            "firstname": "Federico",
+            "lastname": "Valverde",
+            "name": "Federico Valverde",
+            "display_name": "F. Valverde",
+            "image_path": "https://cdn.sportmonks.com/images/soccer/players/12/400300.png",
+            "height": 182,
+            "weight": 78,
+            "date_of_birth": "1998-07-22",
+            "gender": "male"
+          }
+        }
+      ]
+    }
+  ],
+  "subscription": [
+    {
+      "meta": {
+        "trial_ends_at": null,
+        "ends_at": "2027-01-01 00:00:00",
+        "current_timestamp": "2026-03-07 10:00:00"
+      },
+      "plans": [{"plan": "European", "sport": "Football", "category": "Advanced"}],
+      "add_ons": [],
+      "widgets": []
+    }
+  ],
+  "rate_limit": {
+    "resets_in_seconds": 3600,
+    "remaining": 2999,
+    "requested_entity": "Team"
+  },
+  "timezone": "UTC"
+}

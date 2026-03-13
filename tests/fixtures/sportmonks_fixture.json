@@ -1,0 +1,162 @@
+{
+  "data": {
+    "id": 19118621,
+    "sport_id": 1,
+    "league_id": 564,
+    "season_id": 23614,
+    "stage_id": 77453672,
+    "round_id": 340886,
+    "name": "Real Madrid vs FC Barcelona",
+    "starting_at": "2026-03-01 20:00:00",
+    "starting_at_timestamp": 1740859200,
+    "result_info": "Real Madrid won after full-time.",
+    "leg": "1/1",
+    "length": 90,
+    "placeholder": false,
+    "has_odds": true,
+    "state": {
+      "id": 5,
+      "state": "FT",
+      "name": "Ended",
+      "short_name": "FT",
+      "developer_name": "FINISHED",
+      "count_time": false
+    },
+    "scores": [
+      {
+        "id": 8800001,
+        "fixture_id": 19118621,
+        "type_id": 1525,
+        "participant_id": 86,
+        "score": {"goals": 3, "participant": "home"},
+        "description": "CURRENT"
+      },
+      {
+        "id": 8800002,
+        "fixture_id": 19118621,
+        "type_id": 1525,
+        "participant_id": 83,
+        "score": {"goals": 2, "participant": "away"},
+        "description": "CURRENT"
+      }
+    ],
+    "lineups": [
+      {
+        "id": 7700001,
+        "fixture_id": 19118621,
+        "player_id": 200100,
+        "team_id": 86,
+        "position_id": 24,
+        "formation_position": "8",
+        "jersey_number": 5,
+        "captain": false,
+        "type_id": 11,
+        "player": {
+          "id": 200100,
+          "name": "Jude Bellingham",
+          "common_name": "Bellingham",
+          "image_path": "https://cdn.sportmonks.com/images/soccer/players/5/200100.png",
+          "position_id": 24
+        },
+        "statistics": [
+          {"type_id": 52, "value": 2},
+          {"type_id": 79, "value": 1},
+          {"type_id": 78, "value": 90},
+          {"type_id": 80, "value": 5},
+          {"type_id": 84, "value": 8},
+          {"type_id": 83, "value": 4},
+          {"type_id": 99, "value": 88}
+        ],
+        "rating": "9.20"
+      },
+      {
+        "id": 7700002,
+        "fixture_id": 19118621,
+        "player_id": 300200,
+        "team_id": 86,
+        "position_id": 27,
+        "formation_position": "9",
+        "jersey_number": 9,
+        "captain": true,
+        "type_id": 11,
+        "player": {
+          "id": 300200,
+          "name": "Karim Benzema",
+          "common_name": "Benzema",
+          "image_path": "https://cdn.sportmonks.com/images/soccer/players/8/300200.png",
+          "position_id": 27
+        },
+        "statistics": [
+          {"type_id": 52, "value": 1},
+          {"type_id": 79, "value": 1},
+          {"type_id": 78, "value": 90},
+          {"type_id": 80, "value": 4},
+          {"type_id": 84, "value": 5},
+          {"type_id": 99, "value": 81}
+        ],
+        "rating": "8.00"
+      },
+      {
+        "id": 7700101,
+        "fixture_id": 19118621,
+        "player_id": 500400,
+        "team_id": 83,
+        "position_id": 27,
+        "formation_position": "9",
+        "jersey_number": 9,
+        "captain": false,
+        "type_id": 11,
+        "player": {
+          "id": 500400,
+          "name": "Robert Lewandowski",
+          "common_name": "Lewandowski",
+          "image_path": "https://cdn.sportmonks.com/images/soccer/players/16/500400.png",
+          "position_id": 27
+        },
+        "statistics": [
+          {"type_id": 52, "value": 1},
+          {"type_id": 79, "value": 0},
+          {"type_id": 78, "value": 90},
+          {"type_id": 80, "value": 3},
+          {"type_id": 84, "value": 4},
+          {"type_id": 99, "value": 79}
+        ],
+        "rating": "6.50"
+      }
+    ],
+    "participants": [
+      {
+        "id": 86,
+        "name": "Real Madrid",
+        "short_code": "RMA",
+        "image_path": "https://cdn.sportmonks.com/images/soccer/teams/22/86.png",
+        "meta": {"location": "home", "winner": true, "position": 1}
+      },
+      {
+        "id": 83,
+        "name": "FC Barcelona",
+        "short_code": "BAR",
+        "image_path": "https://cdn.sportmonks.com/images/soccer/teams/19/83.png",
+        "meta": {"location": "away", "winner": false, "position": 2}
+      }
+    ]
+  },
+  "subscription": [
+    {
+      "meta": {
+        "trial_ends_at": null,
+        "ends_at": "2027-01-01 00:00:00",
+        "current_timestamp": "2026-03-07 10:00:00"
+      },
+      "plans": [{"plan": "European", "sport": "Football", "category": "Advanced"}],
+      "add_ons": [],
+      "widgets": []
+    }
+  ],
+  "rate_limit": {
+    "resets_in_seconds": 3600,
+    "remaining": 2997,
+    "requested_entity": "Fixture"
+  },
+  "timezone": "UTC"
+}

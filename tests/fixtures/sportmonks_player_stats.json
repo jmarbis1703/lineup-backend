@@ -1,0 +1,101 @@
+{
+  "data": {
+    "id": 200100,
+    "sport_id": 1,
+    "country_id": 17,
+    "nationality_id": 17,
+    "city_id": null,
+    "position_id": 24,
+    "detailed_position_id": 153,
+    "type_id": 26,
+    "common_name": "Bellingham",
+    "firstname": "Jude",
+    "lastname": "Bellingham",
+    "name": "Jude Bellingham",
+    "display_name": "J. Bellingham",
+    "image_path": "https://cdn.sportmonks.com/images/soccer/players/5/200100.png",
+    "height": 186,
+    "weight": 83,
+    "date_of_birth": "2003-06-29",
+    "gender": "male",
+    "statistics": [
+      {
+        "id": 9900001,
+        "player_id": 200100,
+        "team_id": 86,
+        "season_id": 23614,
+        "has_values": true,
+        "rating": "8.20",
+        "position_id": 24,
+        "details": [
+          {
+            "id": 110001,
+            "statistic_id": 9900001,
+            "type_id": 52,
+            "value": {"total": 32, "goals": 14, "penalties": 1}
+          },
+          {
+            "id": 110002,
+            "statistic_id": 9900001,
+            "type_id": 79,
+            "value": {"total": 9, "assists": 9}
+          },
+          {
+            "id": 110003,
+            "statistic_id": 9900001,
+            "type_id": 78,
+            "value": {"minutes": 2530}
+          },
+          {
+            "id": 110004,
+            "statistic_id": 9900001,
+            "type_id": 80,
+            "value": {"shots": 87, "on_target": 41, "blocked": 18}
+          },
+          {
+            "id": 110005,
+            "statistic_id": 9900001,
+            "type_id": 99,
+            "value": {"total": 1180, "accurate": 1003, "percentage": "85.00"}
+          },
+          {
+            "id": 110006,
+            "statistic_id": 9900001,
+            "type_id": 83,
+            "value": {"total": 44, "success": 28}
+          },
+          {
+            "id": 110007,
+            "statistic_id": 9900001,
+            "type_id": 84,
+            "value": {"total": 98, "won": 61}
+          },
+          {
+            "id": 110008,
+            "statistic_id": 9900001,
+            "type_id": 85,
+            "value": {"total": 4, "yellow": 4, "red": 0}
+          }
+        ]
+      }
+    ]
+  },
+  "subscription": [
+    {
+      "meta": {
+        "trial_ends_at": null,
+        "ends_at": "2027-01-01 00:00:00",
+        "current_timestamp": "2026-03-07 10:00:00"
+      },
+      "plans": [{"plan": "European", "sport": "Football", "category": "Advanced"}],
+      "add_ons": [],
+      "widgets": []
+    }
+  ],
+  "rate_limit": {
+    "resets_in_seconds": 3600,
+    "remaining": 2998,
+    "requested_entity": "Player"
+  },
+  "timezone": "UTC"
+}

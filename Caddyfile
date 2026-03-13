@@ -1,0 +1,32 @@
+{$DOMAIN} {
+    # Automatic HTTPS via Let's Encrypt
+    tls {$TLS_EMAIL}
+
+    # WebSocket support
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @websocket {
+        reverse_proxy api:8000
+    }
+
+    # All other traffic
+    handle {
+        reverse_proxy api:8000
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

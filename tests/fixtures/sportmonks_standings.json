@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "id": 258870,
+      "participant_id": 86,
+      "sport_id": 1,
+      "league_id": 564,
+      "season_id": 23614,
+      "stage_id": 77476930,
+      "group_id": null,
+      "round_id": 373236,
+      "standing_rule_id": 127567,
+      "position": 1,
+      "result": "equal",
+      "points": 67
+    }
+  ],
+  "pagination": {
+    "count": 1,
+    "per_page": 100,
+    "current_page": 1,
+    "next_page": null,
+    "has_more": false
+  },
+  "timezone": "UTC"
+}
