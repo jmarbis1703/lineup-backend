@@ -1,0 +1,10 @@
+.env
+.env.prod
+.env.local
+.env.staging
+*.env
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.git

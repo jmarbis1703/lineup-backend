@@ -71,7 +71,7 @@ services:
   celery_worker:
     image: lineup-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    command: celery -A app.workers.celery_app:celery_app worker --loglevel=warning --concurrency=4
+    command: celery -A app.workers.celery_app:celery_app worker --loglevel=info --concurrency=4
     env_file:
       - .env.prod
     environment:
@@ -91,7 +91,7 @@ services:
   celery_beat:
     image: lineup-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    command: celery -A app.workers.celery_app:celery_app beat --loglevel=warning --schedule=/tmp/celerybeat-schedule
+    command: celery -A app.workers.celery_app:celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     env_file:
       - .env.prod
     environment:

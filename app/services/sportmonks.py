@@ -242,7 +242,7 @@ class SportmonksClient:
             "fixtures",
             params={
                 "filters": f"fixtureLeagues:{league_id};between:{date_from},{date_to}",
-                "include": "participants",
+                "include": "participants;state",
             },
         )
         return data.get("data", [])

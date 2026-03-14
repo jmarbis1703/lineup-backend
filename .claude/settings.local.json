@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la C:/Users/jmarb/LineUp/lineup-backend/.env* 2>/dev/null && find C:/Users/jmarb/LineUp/lineup-backend/app -name \"config.py\" 2>/dev/null)",
+      "Bash(cd C:/Users/jmarb/LineUp/lineup-backend && docker compose -f docker-compose.prod.yml config 2>&1 | head -60)",
+      "Bash(ls C:/Users/jmarb/LineUp/lineup-backend/Dockerfile* 2>/dev/null)",
+      "Bash(cd C:/Users/jmarb/LineUp/lineup-backend && docker exec lineup-backend-api-1 python -c \"import urllib.request; print\\(urllib.request.urlopen\\('http://localhost:8000/health'\\).read\\(\\)\\)\" 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 docker inspect lineup-backend-api-1 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec lineup-backend-api-1 ls -la /app/ 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec lineup-backend-api-1 grep -rn \"AsyncSessionLocal\\\\|async_session\\\\|SessionLocal\" /app/app/ 2>&1 | head -40)",
+      "Bash(MSYS_NO_PATHCONV=1 docker compose -f docker-compose.prod.yml exec api python3 /app/check_market.py 2>&1)"
+    ]
+  }
+}

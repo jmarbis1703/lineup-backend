@@ -14,12 +14,12 @@ from app.config import settings
 # Module-level engine + session factory created once at import time.
 # pool_pre_ping=True drops stale connections silently on checkout.
 _engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True)
-_AsyncSessionLocal = async_sessionmaker(_engine, expire_on_commit=False)
+AsyncSessionLocal = async_sessionmaker(_engine, expire_on_commit=False)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency: yields a transactional AsyncSession per request."""
-    async with _AsyncSessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         yield session
 
 
