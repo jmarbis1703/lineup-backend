@@ -37,6 +37,10 @@ alembic/versions/__pycache__/
 # Deployment artefacts
 .initial_import_done
 
+# Local debug artifacts
+sportmonks_payload_dump.json
+fetch_test_player.py
+
 # Logs
 *.log
 
