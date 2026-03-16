@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -22,6 +22,38 @@ logger = logging.getLogger(__name__)
 
 # Sentinel fixture ID used for seed PlayerMatchRating rows during initial import
 _SEED_FIXTURE_ID: int = 0
+
+
+def _extract_match_ratings(fixtures: list[dict]) -> dict[int, list[float]]:
+    """Build player_id → [last 5 match ratings] from fixture lineups (type_id 118).
+
+    Fixtures should be ordered most-recent-first.  Ratings beyond 5 are discarded.
+    """
+    from app.services.sportmonks import _TYPE_MATCH_RATING
+    ratings_map: dict[int, list[float]] = {}
+    for fixture in fixtures:
+        for lineup_entry in fixture.get("lineups", []):
+            pid = lineup_entry.get("player_id")
+            if not pid:
+                continue
+            for detail in lineup_entry.get("details", []):
+                if detail.get("type_id") != _TYPE_MATCH_RATING:
+                    continue
+                data_block = detail.get("data") or {}
+                raw = data_block.get("value")
+                if raw is None:
+                    val_block = detail.get("value") or {}
+                    raw = val_block.get("rating") or val_block.get("total")
+                if raw is None:
+                    continue
+                try:
+                    r = float(raw)
+                except (ValueError, TypeError):
+                    continue
+                bucket = ratings_map.setdefault(pid, [])
+                if len(bucket) < 5:
+                    bucket.append(r)
+    return ratings_map
 
 
 async def _ensure_seed_fixture(db: AsyncSession) -> None:
@@ -65,6 +97,68 @@ def _build_oracle_stats(stats: dict[str, Any], position_group: str) -> dict[str,
         "goals_conceded": stats.get("goals_conceded"),
         "minutes_played": stats.get("minutes_played"),
     }
+
+
+def _collect_league_entries(
+    teams: list[dict],
+    stats_cache: dict[int, dict],
+    league_id: int,
+    top_n: int,
+) -> list[tuple[dict, str, int, str, dict]]:
+    """Filter, sort, and slice squad entries for one league; return tuples for pass 2."""
+    squad_entries: list[tuple[dict, str]] = []
+    for team in teams:
+        team_name = team.get("name", "Unknown")
+        squads = team.get("squads", [])
+        if isinstance(squads, dict):
+            squads = squads.get("data", [])
+        for entry in squads:
+            squad_entries.append((entry, team_name))
+
+    def _is_active(entry_team: tuple[dict, str]) -> bool:
+        entry, _ = entry_team
+        pid = entry.get("player", {}).get("id") or entry.get("player_id")
+        stats = stats_cache.get(pid, {})
+        return bool(stats.get("minutes_played")) or bool(stats.get("match_ratings"))
+
+    def sort_key(entry_team: tuple[dict, str]) -> tuple[float, int]:
+        entry, _ = entry_team
+        pid = entry.get("player", {}).get("id") or entry.get("player_id")
+        stats = stats_cache.get(pid, {})
+        match_ratings = stats.get("match_ratings", [])
+        if match_ratings:
+            primary = sum(match_ratings) / len(match_ratings)
+        else:
+            try:
+                primary = float(stats.get("sportmonks_rating") or 0)
+            except (ValueError, TypeError):
+                primary = 0.0
+        secondary = stats.get("minutes_played", 0) or 0
+        return (primary, secondary)
+
+    active_entries = [e for e in squad_entries if _is_active(e)]
+    if not active_entries:
+        logger.warning(
+            "League %d: no players with minutes_played > 0 — "
+            "new season or gap; including all %d squad entries.",
+            league_id,
+            len(squad_entries),
+        )
+        active_entries = squad_entries
+
+    active_entries.sort(key=sort_key, reverse=True)
+    selected = active_entries[:top_n]
+
+    result: list[tuple[dict, str, int, str, dict]] = []
+    for entry, team_name in selected:
+        player_data = entry.get("player", {})
+        pid = player_data.get("id") or entry.get("player_id")
+        if not pid:
+            continue
+        pg = map_position_to_group(str(entry.get("position_id", "")))
+        stats = stats_cache.get(pid, {})
+        result.append((entry, team_name, league_id, pg, stats))
+    return result
 
 
 async def _upsert_player(
@@ -136,7 +230,12 @@ async def _upsert_player(
     await db.flush()
 
     # Compute oracle rating
-    match_ratings: list[float | None] = [stats.get("sportmonks_rating")]
+    match_ratings_raw: list[float] = stats.get("match_ratings") or []
+    if match_ratings_raw:
+        match_ratings: list[float | None] = match_ratings_raw
+    else:
+        # Fallback: season-level single rating (may be None → triggers Layer 2/3)
+        match_ratings = [stats.get("sportmonks_rating")]
     oracle_rating, oracle_source = compute_oracle_rating(
         match_ratings=match_ratings,
         player_stats=_build_oracle_stats(stats, position_group),
@@ -190,11 +289,20 @@ async def initial_player_import(
 ) -> int:
     """Import top N players per league and initialise their markets.
 
+    Uses a two-pass approach: Pass 1 collects all data across every league;
+    Pass 2 upserts all players against the full cross-league peer pool so
+    that Layer 2 percentile math is not compressed to a single-league sample.
+
     Returns the total number of players imported/upserted.
     """
     await _ensure_seed_fixture(db)
     b_min = await _get_b_min(db)
-    total = 0
+    # Commit setup queries so the session is not idle-in-transaction during API calls
+    await db.commit()
+
+    # Pass 1 — fetch all data, collect (entry, team_name, league_id, pg, stats)
+    # No DB writes happen here; session is idle so no long-held transaction.
+    all_league_data: list[tuple[dict, str, int, str, dict]] = []
 
     for league_id in league_ids:
         try:
@@ -209,20 +317,18 @@ async def initial_player_import(
             logger.warning("Could not fetch teams for league %d; skipping", league_id)
             continue
 
-        # Fix 1: Unwrap Sportmonks nested include envelope
-        # Live API returns team["squads"] as {"data": [...]}, not [...]
-        squad_entries: list[tuple[dict, str]] = []
+        # Fetch stats for ALL squad members across every team before slicing
+        all_squad_entries: list[tuple[dict, str]] = []
         for team in teams:
             team_name = team.get("name", "Unknown")
             squads = team.get("squads", [])
             if isinstance(squads, dict):
                 squads = squads.get("data", [])
             for entry in squads:
-                squad_entries.append((entry, team_name))
+                all_squad_entries.append((entry, team_name))
 
-        # Fix 2: Fetch stats for ALL squad members before slicing
         stats_cache: dict[int, dict] = {}
-        for entry, _team_name in squad_entries:
+        for entry, _team_name in all_squad_entries:
             player_data = entry.get("player", {})
             pid: int | None = player_data.get("id") or entry.get("player_id")
             if not pid:
@@ -233,53 +339,70 @@ async def initial_player_import(
                 logger.warning("Could not fetch stats for player %d", pid)
                 stats_cache[pid] = {}
 
-        # Fix 3: Activity filter — keep only players with minutes_played > 0
-        # Fall back to full list if no player has minutes (new season).
-        def _get_minutes(entry_team: tuple[dict, str]) -> int:
-            entry, _ = entry_team
-            pid = entry.get("player", {}).get("id") or entry.get("player_id")
-            return stats_cache.get(pid, {}).get("minutes_played") or 0
+        # Fetch recent fixtures per team to collect per-match ratings (Layer 1)
+        now = datetime.now(timezone.utc)
+        date_to = now.strftime("%Y-%m-%d")
+        date_from = (now - timedelta(days=45)).strftime("%Y-%m-%d")
 
-        active_entries = [e for e in squad_entries if _get_minutes(e) > 0]
-        if not active_entries:
-            logger.warning(
-                "League %d: no players with minutes_played > 0 — "
-                "new season or gap; including all %d squad entries.",
-                league_id,
-                len(squad_entries),
-            )
-            active_entries = squad_entries
-
-        # Fix 2 (continued): Sort by minutes_played DESC, THEN slice
-        active_entries.sort(key=_get_minutes, reverse=True)
-        selected_entries = active_entries[:top_n_per_league]
-
-        # Build peer stats list for Layer 2 oracle percentile context
-        all_players_stats: list[dict] = []
-        for entry, _team_name in selected_entries:
-            player_data = entry.get("player", {})
-            pid = player_data.get("id") or entry.get("player_id")
-            if not pid:
+        match_ratings_cache: dict[int, list[float]] = {}
+        for team in teams:
+            team_id = team.get("id")
+            if not team_id:
                 continue
-            pg = map_position_to_group(str(entry.get("position_id", "")))
-            stats = stats_cache.get(pid, {})
-            all_players_stats.append({"player_id": pid, "position_group": pg, **stats})
+            try:
+                fixtures = await client.get_team_fixtures_with_ratings(
+                    team_id, date_from, date_to
+                )
+                team_ratings = _extract_match_ratings(fixtures)
+                for pid, ratings in team_ratings.items():
+                    existing = match_ratings_cache.get(pid, [])
+                    match_ratings_cache[pid] = (existing + ratings)[:5]
+            except Exception:
+                logger.warning("Could not fetch fixtures for team %d", team_id)
 
-        # Upsert each player
-        for entry, team_name in selected_entries:
-            player_data = entry.get("player", {})
-            pid = player_data.get("id") or entry.get("player_id")
-            if not pid:
-                continue
-            pg = map_position_to_group(str(entry.get("position_id", "")))
-            stats = stats_cache.get(pid, {})
-            p = await _upsert_player(
-                db, entry, team_name, league_id, pg, stats, b_min, all_players_stats
-            )
-            if p:
-                total += 1
+        # Inject match_ratings into stats_cache
+        for pid in stats_cache:
+            stats_cache[pid]["match_ratings"] = match_ratings_cache.get(pid, [])
 
-    await db.commit()
+        league_entries = _collect_league_entries(
+            teams, stats_cache, league_id, top_n_per_league
+        )
+        all_league_data.extend(league_entries)
+
+    # Build cross-league peer pool (all selected players across all leagues)
+    all_players_stats: list[dict] = []
+    for entry, _team_name, _league_id, pg, stats in all_league_data:
+        player_data = entry.get("player", {})
+        pid = player_data.get("id") or entry.get("player_id")
+        if not pid:
+            continue
+        all_players_stats.append({"player_id": pid, "position_group": pg, **stats})
+
+    # Pass 2 — upsert per-league with a commit after each league.
+    # Each transaction covers ~50 players and completes in ≤8 minutes,
+    # preventing idle-in-transaction timeouts and limiting rollback blast radius.
+    league_groups: dict[int, list[tuple[dict, str, int, str, dict]]] = {}
+    for item in all_league_data:
+        league_groups.setdefault(item[2], []).append(item)
+
+    total = 0
+    for lid, items in league_groups.items():
+        league_count = 0
+        for entry, team_name, _lid, pg, stats in items:
+            try:
+                p = await _upsert_player(
+                    db, entry, team_name, lid, pg, stats, b_min, all_players_stats
+                )
+                if p:
+                    total += 1
+                    league_count += 1
+            except Exception as exc:
+                logger.warning(
+                    "Failed to upsert player in league %d, skipping: %s", lid, exc
+                )
+        await db.commit()
+        logger.info("Committed %d players for league %d", league_count, lid)
+
     return total
 
 

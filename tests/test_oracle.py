@@ -69,24 +69,25 @@ def test_layer1_result_in_range():
 # ===========================================================================
 
 def test_percentile_midpoint():
-    """Value at the 50th percentile maps to exactly 6.5."""
-    # [1..10]: sum(v <= 5) = 5; rank = 5/10 = 0.5 → 3.0 + 3.5 = 6.5
+    """Value at the 50th percentile maps to ~6.25 under mid-rank."""
+    # [1..10]: lower=count(v<5)=4, equal=1, rank=(4+0.5)/10=0.45 → 6.25
     all_values = list(range(1, 11))
-    assert percentile_to_rating(5, all_values) == pytest.approx(6.5)
+    assert percentile_to_rating(5, all_values) == pytest.approx(6.25)
 
 
 def test_percentile_top():
-    """Max value → rank = 1.0 → rating = 10.0."""
+    """Max value in a pool gets mid-rank 0.9 (not 1.0) — it ties with itself."""
+    # [1..5]: lower=4, equal=1, rank=(4+0.5)/5=0.9 → 8.5
     all_values = [1, 2, 3, 4, 5]
-    assert percentile_to_rating(5, all_values) == pytest.approx(10.0)
+    assert percentile_to_rating(5, all_values) == pytest.approx(8.5)
 
 
 def test_percentile_bottom():
-    """Min value in a large pool → rank ≈ 0 → rating close to 3.0."""
+    """Min value in a large pool → rank ≈ 0 → rating close to 4.0."""
     all_values = list(range(1, 101))  # 1 .. 100
-    # rank = 1/100 = 0.01 → 3.0 + 0.07 = 3.07
+    # rank = (0+0.5)/100 = 0.005 → 4.0 + 0.025 = 4.025
     result = percentile_to_rating(1, all_values)
-    assert 3.0 <= result <= 3.5
+    assert 4.0 <= result <= 4.5
 
 
 def test_percentile_no_variation():
@@ -95,20 +96,20 @@ def test_percentile_no_variation():
 
 
 def test_percentile_inverse():
-    """inverse=True: the LOWEST raw value earns the HIGHEST rating (10.0)."""
+    """inverse=True: the LOWEST raw value earns a high (but not 10.0) rating."""
     # goals_conceded=0 in pool [0,1,2,3,4]:
-    # rank = sum(v >= 0) / 5 = 5/5 = 1.0 → 10.0
+    # lower=count(v>0)=4, equal=1, rank=(4+0.5)/5=0.9 → 8.5
     all_values = [0, 1, 2, 3, 4]
-    assert percentile_to_rating(0, all_values, inverse=True) == pytest.approx(10.0)
+    assert percentile_to_rating(0, all_values, inverse=True) == pytest.approx(8.5)
 
 
 def test_percentile_inverse_high_is_bad():
-    """inverse=True: the HIGHEST raw value earns a rating close to 3.0."""
+    """inverse=True: the HIGHEST raw value earns a rating close to 4.0."""
     # goals_conceded=100 in pool [0..100]:
-    # rank = sum(v >= 100) / 101 = 1/101 ≈ 0.0099 → 3.069
+    # rank = (0+0.5)/101 ≈ 0.00495 → 4.0 + 0.0247 ≈ 4.025
     all_values = list(range(0, 101))
     result = percentile_to_rating(100, all_values, inverse=True)
-    assert 3.0 <= result < 4.0
+    assert 4.0 <= result <= 4.1
 
 
 # ===========================================================================
@@ -122,10 +123,10 @@ def test_layer2_forward():
         {"position_group": "FW", "goals": 10, "shots_on_target": 0},
     ]
     player_stats = {"goals": 10, "shots_on_target": 0}
-    # goals: peer_values=[0,10], player=10 → rank=1.0 → 10.0
-    # shots_on_target: peer_values=[10,0], player=0 → rank=0.5 → 6.5
-    # composite = (0.25*10.0 + 0.20*6.5) / (0.25 + 0.20)
-    expected = (0.25 * 10.0 + 0.20 * 6.5) / (0.25 + 0.20)
+    # goals: peer_values=[0,10], player=10 → lower=1,equal=1,rank=0.75 → 7.75
+    # shots_on_target: peer_values=[10,0], player=0 → lower=0,equal=1,rank=0.25 → 5.25
+    # composite = (0.25*7.75 + 0.20*5.25) / (0.25 + 0.20)
+    expected = (0.25 * 7.75 + 0.20 * 5.25) / (0.25 + 0.20)
     result = compute_layer2_composite(player_stats, "FW", pool)
     assert result == pytest.approx(expected)
 
@@ -137,10 +138,10 @@ def test_layer2_midfielder():
         {"position_group": "MF", "pass_accuracy": 10, "goals": 0},
     ]
     player_stats = {"pass_accuracy": 10, "goals": 0}
-    # pass_accuracy: peer_values=[0,10], player=10 → rank=1.0 → 10.0
-    # goals: peer_values=[10,0], player=0 → rank=0.5 → 6.5
-    # composite = (0.20*10.0 + 0.15*6.5) / (0.20 + 0.15)
-    expected = (0.20 * 10.0 + 0.15 * 6.5) / (0.20 + 0.15)
+    # pass_accuracy: peer_values=[0,10], player=10 → lower=1,equal=1,rank=0.75 → 7.75
+    # goals: peer_values=[10,0], player=0 → lower=0,equal=1,rank=0.25 → 5.25
+    # composite = (0.20*7.75 + 0.15*5.25) / (0.20 + 0.15)
+    expected = (0.20 * 7.75 + 0.15 * 5.25) / (0.20 + 0.15)
     result = compute_layer2_composite(player_stats, "MF", pool)
     assert result == pytest.approx(expected)
 
@@ -152,10 +153,10 @@ def test_layer2_defender():
         {"position_group": "DF", "tackles": 10, "interceptions": 0},
     ]
     player_stats = {"tackles": 10, "interceptions": 0}
-    # tackles: peer_values=[0,10], player=10 → rank=1.0 → 10.0
-    # interceptions: peer_values=[10,0], player=0 → rank=0.5 → 6.5
-    # composite = (0.25*10.0 + 0.20*6.5) / (0.25 + 0.20)
-    expected = (0.25 * 10.0 + 0.20 * 6.5) / (0.25 + 0.20)
+    # tackles: peer_values=[0,10], player=10 → lower=1,equal=1,rank=0.75 → 7.75
+    # interceptions: peer_values=[10,0], player=0 → lower=0,equal=1,rank=0.25 → 5.25
+    # composite = (0.25*7.75 + 0.20*5.25) / (0.25 + 0.20)
+    expected = (0.25 * 7.75 + 0.20 * 5.25) / (0.25 + 0.20)
     result = compute_layer2_composite(player_stats, "DF", pool)
     assert result == pytest.approx(expected)
 
@@ -167,12 +168,13 @@ def test_layer2_goalkeeper():
         {"position_group": "GK", "saves": 5, "goals_conceded": 5},   # mid
         {"position_group": "GK", "saves": 10, "goals_conceded": 0},  # best
     ]
-    # Best GK: saves=10 (rank 1.0→10.0), goals_conceded=0 (inverse rank 1.0→10.0)
-    # composite = (0.30*10.0 + 0.20*10.0) / (0.30 + 0.20) = 10.0
+    # Best GK: saves=10 in [0,5,10] → lower=2,equal=1,rank=2.5/3≈0.833 → 8.167
+    #          goals_conceded=0 inverse in [10,5,0] → lower=2,equal=1,rank=0.833 → 8.167
+    # composite = (0.30*8.167 + 0.20*8.167) / (0.30 + 0.20) ≈ 8.167
     best = compute_layer2_composite(
         {"saves": 10, "goals_conceded": 0}, "GK", pool
     )
-    assert best == pytest.approx(10.0)
+    assert best == pytest.approx(4.0 + (2.5 / 3) * 5.0)
 
     # Worst GK must score lower than best GK
     worst = compute_layer2_composite(
@@ -198,11 +200,11 @@ def test_layer2_missing_stats():
     ]
     # Only 'goals' provided; all other FW stats (shots, xg, …) are absent.
     player_stats = {"goals": 10}
-    # goals: peer_values=[0,10], rank=1.0 → 10.0
-    # used_weight = 0.25 (goals only); composite = 0.25*10.0 / 0.25 = 10.0
+    # goals: peer_values=[0,10], lower=1,equal=1,rank=0.75 → 7.75
+    # used_weight = 0.25 (goals only); composite = 0.25*7.75 / 0.25 = 7.75
     result = compute_layer2_composite(player_stats, "FW", pool)
     assert result is not None
-    assert result == pytest.approx(10.0)
+    assert result == pytest.approx(7.75)
 
 
 def test_layer2_all_missing_stats_division_by_zero():
@@ -228,6 +230,61 @@ def test_layer2_result_in_range():
         )
         assert result is not None
         assert 3.0 <= result <= 10.0
+
+
+# ===========================================================================
+# LAYER 2 — tie-regression tests  (ceiling-rank prevention)
+# ===========================================================================
+
+def test_percentile_massive_tie_at_zero_not_inflated():
+    """90 zeros + 10 non-zeros: player with 0 goals must NOT score near 10.0."""
+    all_values = [0] * 90 + list(range(1, 11))
+    result = percentile_to_rating(0, all_values)
+    # mid-rank: lower=0, equal=90, rank=45/100=0.45 → 6.25
+    assert result == pytest.approx(6.25)
+
+
+def test_percentile_tie_all_zeros_returns_default():
+    """All zeros → no-variation guard fires, returns 6.5."""
+    assert percentile_to_rating(0, [0] * 100) == pytest.approx(6.5)
+
+
+def test_percentile_tie_unique_top_and_zero_pool():
+    """Single unique scorer above a pool of zeros: both get correct mid-rank."""
+    all_values = [0] * 9 + [1]
+    # value=1: lower=9, equal=1, rank=(9+0.5)/10=0.95 → 8.75
+    assert percentile_to_rating(1, all_values) == pytest.approx(8.75)
+    # value=0: lower=0, equal=9, rank=4.5/10=0.45 → 6.25
+    assert percentile_to_rating(0, all_values) == pytest.approx(6.25)
+
+
+def test_percentile_inverse_tie_at_zero_not_inflated():
+    """GK with 0 goals_conceded in a mostly-clean-sheet pool: mid-rank, not 10.0."""
+    all_values = [0] * 9 + [3]
+    # inverse, value=0: lower=count(v>0)=1, equal=9, rank=(1+4.5)/10=0.55 → 6.75
+    result = percentile_to_rating(0, all_values, inverse=True)
+    assert result == pytest.approx(6.75)
+
+
+def test_percentile_tied_middle_values_get_midpoint_rank():
+    """Three players tied at 2 in [1,2,2,2,3] all receive the midpoint rank → 6.5."""
+    all_values = [1, 2, 2, 2, 3]
+    # lower=1, equal=3, rank=(1+1.5)/5=0.5 → 6.5
+    assert percentile_to_rating(2, all_values) == pytest.approx(6.5)
+
+
+def test_percentile_two_player_pool_no_ties():
+    """Two-player pool (common in Layer 2 small leagues): correct mid-rank split."""
+    all_values = [0, 10]
+    # value=10: lower=1, equal=1, rank=1.5/2=0.75 → 7.75
+    assert percentile_to_rating(10, all_values) == pytest.approx(7.75)
+    # value=0: lower=0, equal=1, rank=0.5/2=0.25 → 5.25
+    assert percentile_to_rating(0, all_values) == pytest.approx(5.25)
+
+
+def test_percentile_all_same_nonzero_returns_default():
+    """Non-zero constant pool still triggers the no-variation guard → 6.5."""
+    assert percentile_to_rating(5.0, [5.0] * 50) == pytest.approx(6.5)
 
 
 # ===========================================================================

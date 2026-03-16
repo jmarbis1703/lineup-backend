@@ -40,6 +40,8 @@ _BELLINGHAM_STATS: dict = {
     "pass_accuracy": 85.0,
     "key_passes": None,
     "tackles": None,
+    "interceptions": None,
+    "clearances": None,
     "dribbles_won": 28,
     "duels_won": 61,
     "saves": None,
@@ -57,6 +59,8 @@ _EMPTY_STATS: dict = {
     "pass_accuracy": None,
     "key_passes": None,
     "tackles": None,
+    "interceptions": None,
+    "clearances": None,
     "dribbles_won": None,
     "duels_won": None,
     "saves": None,
@@ -65,11 +69,41 @@ _EMPTY_STATS: dict = {
     "xg": None,
 }
 
+_FIXTURES_WITH_RATINGS = [
+    {
+        "id": 9001,
+        "lineups": [
+            {
+                "player_id": 200100,
+                "details": [
+                    {"type_id": 118, "data": {"value": 8.5}},
+                ],
+            },
+            {
+                "player_id": 300200,
+                "details": [],  # no match rating for this player
+            },
+        ],
+    },
+    {
+        "id": 9002,
+        "lineups": [
+            {
+                "player_id": 200100,
+                "details": [
+                    {"type_id": 118, "data": {"value": 7.8}},
+                ],
+            },
+        ],
+    },
+]
+
 _MINIMAL_ACTIVE_STATS: dict = {
     "sportmonks_rating": None,
     "minutes_played": 500,   # > 0 → passes activity filter
     "goals": None, "assists": None, "shots_on_target": None,
     "pass_accuracy": None, "key_passes": None, "tackles": None,
+    "interceptions": None, "clearances": None,
     "dribbles_won": None, "duels_won": None, "saves": None,
     "goals_conceded": None, "clean_sheet": None, "xg": None,
 }
@@ -93,6 +127,7 @@ def _make_mock_client(
         return_value=teams_data[0].get("squads", []) if teams_data else []
     )
     client.get_player_statistics = AsyncMock(side_effect=_get_stats)  # type: ignore[method-assign]
+    client.get_team_fixtures_with_ratings = AsyncMock(return_value=[])  # type: ignore[method-assign]
     return client
 
 
@@ -121,9 +156,12 @@ async def test_client_parses_teams() -> None:
     assert isinstance(teams, list)
     assert len(teams) == 1
     assert teams[0]["id"] == 86
+    assert teams[0]["name"] == "Real Madrid"
     assert len(teams[0]["squads"]) == 3
     # Verify the correct Starter-plan endpoints are used
-    client._get.assert_any_call("standings/seasons/23614", params={"per_page": 100})
+    client._get.assert_any_call(
+        "standings/seasons/23614", params={"per_page": 100, "include": "participant"}
+    )
     client._get.assert_any_call("squads/teams/86", params={"include": "player"})
 
 
@@ -149,6 +187,43 @@ async def test_client_parses_squad() -> None:
     player_ids = {entry["player_id"] for entry in squad}
     assert player_ids == {200100, 300200, 400300}
     client._get.assert_called_once_with("squads/teams/86", params={"include": "player"})
+
+
+# ---------------------------------------------------------------------------
+# Test 2b: zero-stat parse — regression for falsy `or` bug
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_client_parses_zero_goals_as_zero_not_none() -> None:
+    """goals=0 and assists=0 must be stored as 0, not discarded as None."""
+    from app.services.sportmonks import _TYPE_GOALS, _TYPE_ASSISTS, _TYPE_MINUTES
+
+    stats_response = {
+        "data": {
+            "statistics": [
+                {
+                    "rating": None,
+                    "details": [
+                        {"type_id": _TYPE_GOALS, "value": {"goals": 0, "total": 0}},
+                        {"type_id": _TYPE_ASSISTS, "value": {"assists": 0, "total": 0}},
+                        {"type_id": _TYPE_MINUTES, "value": {"minutes": 900}},
+                    ],
+                }
+            ]
+        }
+    }
+
+    client: SportmonksClient = object.__new__(SportmonksClient)
+    client._api_token = "tok"  # type: ignore[attr-defined]
+    client._base_url = "https://api.sportmonks.com/v3/football"  # type: ignore[attr-defined]
+    client._get = AsyncMock(return_value=stats_response)  # type: ignore[method-assign]
+
+    result = await client.get_player_statistics(200100, 23614)
+
+    assert result["goals"] == 0, "goals=0 must not be coerced to None"
+    assert result["assists"] == 0, "assists=0 must not be coerced to None"
+    assert result["minutes_played"] == 900
 
 
 # ---------------------------------------------------------------------------
@@ -365,3 +440,151 @@ async def test_import_filters_by_activity(
     assert imported_ids == {200100, 300200}
     assert 400300 not in imported_ids
     assert 500400 not in imported_ids
+
+
+# ---------------------------------------------------------------------------
+# Test: nested-dict rating format (Sportmonks v3 may return {"average": "7.23"})
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_nested_dict_rating_parsed() -> None:
+    """get_player_statistics handles rating as {'average': '8.20'} (not plain string)."""
+    from app.services.sportmonks import _TYPE_MINUTES
+
+    stats_response = {
+        "data": {
+            "statistics": [
+                {
+                    "rating": {"average": "8.20", "count": 30},
+                    "details": [
+                        {"type_id": _TYPE_MINUTES, "value": {"minutes": 2530}},
+                    ],
+                }
+            ]
+        }
+    }
+
+    client: SportmonksClient = object.__new__(SportmonksClient)
+    client._api_token = "tok"  # type: ignore[attr-defined]
+    client._base_url = "https://api.sportmonks.com/v3/football"  # type: ignore[attr-defined]
+    client._get = AsyncMock(return_value=stats_response)  # type: ignore[method-assign]
+
+    result = await client.get_player_statistics(200100, 23614)
+
+    assert result["sportmonks_rating"] == pytest.approx(8.20), (
+        "nested-dict rating {'average': '8.20'} must be parsed as 8.20"
+    )
+    assert result["minutes_played"] == 2530
+
+
+# ---------------------------------------------------------------------------
+# Test: cross-league peer pool — both leagues' players in oracle context
+# ---------------------------------------------------------------------------
+
+_LEAGUE_B_TEAMS = [
+    {
+        "id": 999,
+        "name": "PSG",
+        "squads": [
+            {"player_id": 600100, "position_id": 13,
+             "player": {"id": 600100, "name": "Kylian Mbappe", "image_path": None}},
+            {"player_id": 700200, "position_id": 8,
+             "player": {"id": 700200, "name": "Marco Verratti", "image_path": None}},
+        ],
+    }
+]
+
+
+@pytest.mark.asyncio
+async def test_cross_league_peer_pool(
+    db_session: AsyncSession,
+    liquidity_config,  # noqa: ANN001
+) -> None:
+    """Two leagues → all players imported, not just the first league's top-N."""
+    league_b_stats = {
+        600100: {**_MINIMAL_ACTIVE_STATS, "minutes_played": 2400},
+        700200: {**_MINIMAL_ACTIVE_STATS, "minutes_played": 2100},
+    }
+    combined_stats = {
+        200100: _BELLINGHAM_STATS,
+        300200: _MINIMAL_ACTIVE_STATS,
+        400300: _MINIMAL_ACTIVE_STATS,
+        **league_b_stats,
+    }
+
+    # Client must handle two league_ids — mock returns different teams per call
+    client: SportmonksClient = object.__new__(SportmonksClient)
+    call_count = 0
+
+    async def _get_teams(league_id: int, season_id: int) -> list[dict]:  # noqa: ARG001
+        nonlocal call_count
+        call_count += 1
+        return _TEAMS_DATA["data"] if league_id == 564 else _LEAGUE_B_TEAMS
+
+    async def _get_stats(player_id: int, season_id: int) -> dict:  # noqa: ARG001
+        return combined_stats.get(player_id, _EMPTY_STATS)
+
+    client.get_current_season_id = AsyncMock(return_value=23614)  # type: ignore[method-assign]
+    client.get_teams_by_league = AsyncMock(side_effect=_get_teams)  # type: ignore[method-assign]
+    client.get_player_statistics = AsyncMock(side_effect=_get_stats)  # type: ignore[method-assign]
+    client.get_team_fixtures_with_ratings = AsyncMock(return_value=[])  # type: ignore[method-assign]
+
+    count = await initial_player_import(db_session, client, [564, 888])
+
+    # 3 from league 564 + 2 from league 888 = 5 total
+    assert count == 5
+    result = await db_session.execute(select(Player))
+    all_ids = {p.id for p in result.scalars().all()}
+    assert {200100, 300200, 400300} <= all_ids, "league 564 players must be present"
+    assert {600100, 700200} <= all_ids, "league 888 players must be present"
+    # Bellingham (layer_1) should still use layer_1 despite cross-league pool
+    mkt_result = await db_session.execute(
+        select(LmsrMarketState).where(LmsrMarketState.player_id == 200100)
+    )
+    bellingham_market = mkt_result.scalar_one()
+    assert bellingham_market.oracle_source == "layer_1"
+
+
+# ---------------------------------------------------------------------------
+# Test: Layer 1 fires from fixture lineups (type_id 118) when no season rating
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_layer1_from_fixture_lineups(
+    db_session: AsyncSession,
+    liquidity_config,  # noqa: ANN001
+) -> None:
+    """Player without a season rating gets layer_1 from fixture lineup ratings."""
+    # Player 200100 has no sportmonks_rating (season-level) but appears in fixtures
+    # Player 300200 has no ratings at all → should fall to layer_3
+    client = _make_mock_client(player_stats={
+        200100: {**_MINIMAL_ACTIVE_STATS, "minutes_played": 2530},
+        300200: _MINIMAL_ACTIVE_STATS,
+        400300: _MINIMAL_ACTIVE_STATS,
+    })
+    # Return fixture data only for team 86 (the Real Madrid team in the test fixture)
+    client.get_team_fixtures_with_ratings = AsyncMock(  # type: ignore[method-assign]
+        return_value=_FIXTURES_WITH_RATINGS
+    )
+
+    await initial_player_import(db_session, client, [564])
+
+    # Player 200100: fixture ratings [8.5, 7.8] → Layer 1 recency-weighted avg
+    # weights [0.35, 0.25], total 0.60 → (0.35*8.5 + 0.25*7.8) / 0.60
+    expected_rating = (0.35 * 8.5 + 0.25 * 7.8) / 0.60
+    result_200100 = await db_session.execute(
+        select(LmsrMarketState).where(LmsrMarketState.player_id == 200100)
+    )
+    market_200100 = result_200100.scalar_one()
+    assert market_200100.oracle_source == "layer_1"
+    assert abs(float(market_200100.oracle_rating) - expected_rating) < 0.01
+
+    # Player 300200: no fixture rating, no season rating → layer_3
+    result_300200 = await db_session.execute(
+        select(LmsrMarketState).where(LmsrMarketState.player_id == 300200)
+    )
+    market_300200 = result_300200.scalar_one()
+    assert market_300200.oracle_source == "layer_3"
+    assert abs(float(market_300200.oracle_rating) - 6.5) < 1e-9

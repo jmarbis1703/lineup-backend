@@ -12,7 +12,12 @@
       "standing_rule_id": 127567,
       "position": 1,
       "result": "equal",
-      "points": 67
+      "points": 67,
+      "participant": {
+        "id": 86,
+        "name": "Real Madrid",
+        "short_code": "RMA"
+      }
     }
   ],
   "pagination": {

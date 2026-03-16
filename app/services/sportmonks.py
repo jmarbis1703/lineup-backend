@@ -79,6 +79,15 @@ _TYPE_SHOTS = 80
 _TYPE_PASSES = 99
 _TYPE_DRIBBLES = 83
 _TYPE_DUELS = 84
+_TYPE_TACKLES = 44
+_TYPE_INTERCEPTIONS = 45
+_TYPE_CLEARANCES = 47
+_TYPE_KEY_PASSES = 119
+_TYPE_SAVES = 58
+_TYPE_CLEAN_SHEET = 56
+_TYPE_GOALS_CONCEDED = 57
+_TYPE_XG = 117
+_TYPE_MATCH_RATING = 118
 
 
 class SportmonksClient:
@@ -103,7 +112,7 @@ class SportmonksClient:
         for attempt in range(3):
             resp = await self._client.get(url, params=params or {})
             if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", 60))
+                retry_after = int(resp.headers.get("Retry-After", 0)) or (30 * (2 ** attempt))
                 logger.warning(
                     "Rate-limited by Sportmonks; waiting %ss (attempt %d)",
                     retry_after,
@@ -128,9 +137,15 @@ class SportmonksClient:
         """
         standings_data = await self._get(
             f"standings/seasons/{season_id}",
-            params={"per_page": 100},
+            params={"per_page": 100, "include": "participant"},
         )
         standings = standings_data.get("data", [])
+        team_name_map: dict[int, str] = {}
+        for s in standings:
+            tid = s.get("participant_id")
+            if tid:
+                participant = s.get("participant") or {}
+                team_name_map[tid] = participant.get("name") or f"Team {tid}"
         team_ids = list({s["participant_id"] for s in standings if s.get("participant_id")})
 
         teams: list[dict] = []
@@ -139,7 +154,11 @@ class SportmonksClient:
                 f"squads/teams/{team_id}",
                 params={"include": "player"},
             )
-            teams.append({"id": team_id, "squads": squad_data.get("data", [])})
+            teams.append({
+                "id": team_id,
+                "name": team_name_map.get(team_id, f"Team {team_id}"),
+                "squads": squad_data.get("data", []),
+            })
 
         return teams
 
@@ -178,6 +197,8 @@ class SportmonksClient:
             "pass_accuracy": None,
             "key_passes": None,
             "tackles": None,
+            "interceptions": None,
+            "clearances": None,
             "dribbles_won": None,
             "duels_won": None,
             "saves": None,
@@ -190,10 +211,13 @@ class SportmonksClient:
             return result
 
         stat_entry = stats_list[0]
-        rating_str = stat_entry.get("rating")
-        if rating_str:
+        # Handle both plain string "7.23" and nested dict {"average": "7.23"}
+        rating_raw = stat_entry.get("rating")
+        if isinstance(rating_raw, dict):
+            rating_raw = rating_raw.get("average") or rating_raw.get("total")
+        if rating_raw:
             try:
-                result["sportmonks_rating"] = float(rating_str)
+                result["sportmonks_rating"] = float(rating_raw)
             except (ValueError, TypeError):
                 pass
 
@@ -202,9 +226,11 @@ class SportmonksClient:
             value = detail.get("value") or {}
 
             if type_id == _TYPE_GOALS:
-                result["goals"] = value.get("goals") or value.get("total")
+                g = value.get("goals")
+                result["goals"] = g if g is not None else value.get("total")
             elif type_id == _TYPE_ASSISTS:
-                result["assists"] = value.get("assists") or value.get("total")
+                a = value.get("assists")
+                result["assists"] = a if a is not None else value.get("total")
             elif type_id == _TYPE_MINUTES:
                 result["minutes_played"] = value.get("minutes")
             elif type_id == _TYPE_SHOTS:
@@ -220,8 +246,48 @@ class SportmonksClient:
                 result["dribbles_won"] = value.get("success")
             elif type_id == _TYPE_DUELS:
                 result["duels_won"] = value.get("won")
+            elif type_id == _TYPE_TACKLES:
+                result["tackles"] = value.get("total") or value.get("tackles")
+            elif type_id == _TYPE_INTERCEPTIONS:
+                result["interceptions"] = value.get("total") or value.get("interceptions")
+            elif type_id == _TYPE_CLEARANCES:
+                result["clearances"] = value.get("total") or value.get("clearances")
+            elif type_id == _TYPE_KEY_PASSES:
+                result["key_passes"] = value.get("total") or value.get("key_passes")
+            elif type_id == _TYPE_SAVES:
+                result["saves"] = value.get("total") or value.get("saves")
+            elif type_id == _TYPE_CLEAN_SHEET:
+                result["clean_sheet"] = value.get("total") or value.get("clean_sheet")
+            elif type_id == _TYPE_GOALS_CONCEDED:
+                result["goals_conceded"] = value.get("total") or value.get("goals_conceded")
+            elif type_id == _TYPE_XG:
+                xg = value.get("total") or value.get("xg")
+                if xg is not None:
+                    try:
+                        result["xg"] = float(xg)
+                    except (ValueError, TypeError):
+                        pass
+            else:
+                logger.debug("unknown type_id %s value %s", type_id, value)
 
         return result
+
+    async def get_team_fixtures_with_ratings(
+        self,
+        team_id: int,
+        date_from: str,
+        date_to: str,
+    ) -> list[dict]:
+        """Fixtures for a team in date range, including lineups.details for match ratings.
+
+        GET /fixtures/between/{date_from}/{date_to}/{team_id}?include=lineups.details
+        Returns list of fixture dicts, each containing a 'lineups' array.
+        """
+        data = await self._get(
+            f"fixtures/between/{date_from}/{date_to}/{team_id}",
+            params={"include": "lineups.details"},
+        )
+        return data.get("data", [])
 
     async def get_fixture_with_lineups(self, fixture_id: int) -> dict:
         """Return fixture data including lineups and player ratings."""

@@ -72,6 +72,8 @@
 | 55 | Extend tests/test_tournaments.py (+12 tests) | QA | DONE | activate locks starting_values; no re-lock; O(1) batch queries; REPEATABLE READ spy; cash+position valuation; snapshot consistency; freeze snapshots; no position modify; completed→snapshot API; freeze batch; cash-only freeze; cash+position freeze |
 | 56 | Write tests/test_integration_e2e.py (7 tests, 28 assertions) | Integration/QA | DONE | Player import+market init (oracle layers 1/3, rating_history); trading Alice/Bob/Charlie; portfolio+leaderboard; oracle update INV-09; tournament lifecycle pending→active→completed; cost basis VWAP; LS-LMSR b_eff growth+diminishing impact |
 | 57 | Fix "Zero Import" bug in initial_player_import() — 3 root causes | Fixes | DONE | Fix 1: unwrap Sportmonks v3 nested squads envelope (dict→list); Fix 2: fetch stats for ALL squad members before slicing, sort by minutes_played DESC then slice; Fix 3: activity filter minutes_played > 0 with new-season fallback. Tests: updated 3 existing + added test_import_filters_by_activity (10 total). |
+| 60 | Oracle misalignment fix: Layer 1 skip + Layer 2 inflation | Fixes | DONE | Fix 1: sportmonks_rating handles nested dict `{"average": "7.23"}`. Fix 2: two-pass import for cross-league peer pool. Fix 3: 8 missing stat type_ids parsed (tackles/interceptions/clearances/key_passes/saves/clean_sheet/goals_conceded/xg). Tests: 2 new + updated stat dicts. |
+| 62 | Fix oracle math (Layer 2 formula) + Layer 1 fixture-based data ingestion | Fixes | DONE | **Phase 1 — Layer 2 formula**: `percentile_to_rating` changed from `3.0 + rank*7.0` (range 3–10) to `4.0 + rank*5.0` (range 4–9). Median rank=0.5 still maps to 6.5 (Layer 3 parity preserved). Prevents players being capped at 10.0 on high percentile. Updated 14 test assertions in test_oracle.py. **Phase 2 — Layer 1 fixture ingestion**: Added `_TYPE_MATCH_RATING = 118` constant and `get_team_fixtures_with_ratings()` method to SportmonksClient (GET fixtures/between/{from}/{to}/{team_id}?include=lineups.details). Added `_extract_match_ratings()` helper in player_import.py to parse lineup details. `initial_player_import` now fetches last 45 days of fixtures per team and injects per-match ratings (up to 5, most-recent-first) into stats_cache. `_upsert_player` uses fixture ratings as Layer 1 input when available, falling back to season-level sportmonks_rating. Added test_layer1_from_fixture_lineups + updated all mock clients. Economic effect: fewer players at inflated prices; Layer 1 now fires whenever a player appeared in recent fixtures. |
 
 ---
 
@@ -112,6 +114,32 @@
 
 _Last updated: 2026-03-13 — Step 58: Fixed get_teams_by_league for Starter-tier Sportmonks plan. Both teams/seasons/{id} (404) and teamLeagues filter (400 "not applicable") fail on Starter. Replaced with 2-step: (1) GET standings/seasons/{season_id}?per_page=100 → unique participant_ids; (2) GET squads/teams/{team_id}?include=player per team. Same fix applied to get_squad. Added sportmonks_standings.json fixture; updated test_client_parses_teams to use side_effect mock routing by path; updated test_client_parses_squad. Live import result: 100 players imported across La Liga + EPL._
 
+### Step 60 — Oracle Misalignment Fix: Layer 1 Skip + Layer 2 Inflation (2026-03-14)
+
+**Issue**: Initial import of 250 players produced inflated ratings 8.5–9.6+ for all players.
+
+**Root causes:**
+1. **Layer 1 silently skipped** — Sportmonks v3 returns `rating` as `{"average": "7.23"}` (nested dict), not the plain string `"7.23"` the code expected. `float({"average": "7.23"})` raises `TypeError`, caught and swallowed, leaving `sportmonks_rating=None` for all players → Layer 2 fires for everyone.
+2. **Per-league peer pool too small** — `all_players_stats` was built inside the per-league loop, giving each league's 50 players as the peer pool. Among ~10-12 elite forwards ranked only against each other, top scorers hit 90th+ percentile → compounded ratings of 9.0+.
+3. **Eight stat type_ids never parsed** — `tackles`, `interceptions`, `clearances`, `key_passes`, `saves`, `clean_sheet`, `goals_conceded`, `xg` were declared in oracle weights but not extracted from the Sportmonks `details` array, so Layer 2 computed composites from an incomplete stat profile.
+
+**Fixes applied:**
+- `app/services/sportmonks.py`: Rating extraction handles both `str` and `dict` formats (`rating_raw.get("average") or rating_raw.get("total")`). Added constants `_TYPE_TACKLES`, `_TYPE_INTERCEPTIONS`, `_TYPE_CLEARANCES`, `_TYPE_KEY_PASSES`, `_TYPE_SAVES`, `_TYPE_CLEAN_SHEET`, `_TYPE_GOALS_CONCEDED`, `_TYPE_XG` (type_ids 44/45/47/119/58/56/57/117). Parsed all 8 new stats in the `details` loop. Added `debug` fallthrough logging for unknown type_ids. Added `interceptions`/`clearances` to result dict.
+- `app/workers/player_import.py`: Refactored `initial_player_import()` into a two-pass approach — Pass 1 collects all data across all leagues without upserting; Pass 2 upserts all players against the full cross-league peer pool (250 players). Extracted `_collect_league_entries()` helper.
+- `tests/test_player_import.py`: Updated `_BELLINGHAM_STATS`, `_EMPTY_STATS`, `_MINIMAL_ACTIVE_STATS` to include `interceptions`/`clearances`. Added `test_nested_dict_rating_parsed` (verifies `{"average": "8.20"}` → `8.20`). Added `test_cross_league_peer_pool` (verifies both leagues' players imported + Bellingham still layer_1).
+
+**Post-fix action (human)**:
+```bash
+docker compose -f docker-compose.prod.yml down -v
+docker compose -f docker-compose.prod.yml build --no-cache
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec api alembic upgrade head
+docker compose -f docker-compose.prod.yml exec api python scripts/run_initial_import.py
+# Verify: layer_1 should be dominant source, avg rating 7.0–7.8
+docker compose -f docker-compose.prod.yml exec db psql -U $POSTGRES_USER -d $POSTGRES_DB \
+  -c "SELECT oracle_source, COUNT(*), ROUND(AVG(oracle_rating)::numeric,2) avg FROM lmsr_market_state GROUP BY oracle_source;"
+```
+
 ---
 
 ## Phase 12 — Production Deployment
@@ -136,6 +164,25 @@ Validation: `bash -n deploy.sh` → OK. `docker compose config` → OK (env warn
 
 Validation: `python -m py_compile scripts/check_system.py` → syntax OK.
 
+### Step 59 — Production Data Bug Fixes (2026-03-14)
+
+**Issue**: Initial import (150 players) produced `oracle_rating=10.0` for all players
+and `team="Unknown"` for every player.
+
+**Root causes identified:**
+1. `percentile_to_rating` used ceiling-rank — tied zeros ranked at top of tie group, inflating every player with 0 in a popular stat to the 90th+ percentile.
+2. `goals`/`assists` zero values stored as `None` due to Python `or` falsy behaviour (`0 or None` → `None`), thinning the peer pool so real scorers reached rank=1.0.
+3. `get_teams_by_league` returned no `name` key; importer always fell back to `"Unknown"`.
+
+**Fixes applied:**
+- `app/core/oracle.py`: ceiling-rank → mid-rank `(lower + 0.5 * equal) / n` (both forward and inverse modes).
+- `app/services/sportmonks.py`: explicit `None` check replaces `or` for goals/assists parsing.
+- `app/services/sportmonks.py`: `include=participant` on standings fetch populates `team_name_map`; `name` key added to every team dict returned by `get_teams_by_league`.
+- `tests/test_oracle.py`: 8 existing assertions recalculated for mid-rank + 7 new tie-regression tests added.
+- `tests/test_player_import.py`: standings params assertion updated; `sportmonks_standings.json` fixture extended with `participant` sub-object; zero-stat parse regression test added.
+
+**Post-fix action (human)**: `docker compose -f docker-compose.prod.yml down -v` then re-run import.
+
 ### Pending human actions
 
 1. Copy repo to VPS: `git clone <repo> /opt/lineup`
@@ -143,3 +190,14 @@ Validation: `python -m py_compile scripts/check_system.py` → syntax OK.
 3. First deploy: `./deploy.sh --first`
 4. Verify: `python scripts/check_system.py --base-url https://<domain> --sportmonks-token <token>`
    → Expected: `7/7 checks PASSED`
+
+
+---
+
+## Step 61 (2026-03-14): Production resilience hardening — initial import
+- Fixed God Transaction: `initial_player_import` now commits setup queries before Pass 1 API calls begin, then commits per-league in Pass 2 (5 short transactions ≤8 min each) instead of one 40-min transaction (`app/workers/player_import.py`)
+- Added exponential backoff to `SportmonksClient._get` when `Retry-After` header absent: 30s/60s/120s vs flat 60s default (`app/services/sportmonks.py`)
+- Added `--league-id` CLI arg to `scripts/run_initial_import.py` for single-league test runs (`python scripts/run_initial_import.py --league-id 8`)
+
+## Step 62 (2026-03-16): Fix `_extract_match_ratings` for live API payload structure
+Updated `_extract_match_ratings` to handle live API payload structure `{'data': {'value': float}}` with fallback to legacy `{'value': {'rating': ...}}`. Live probe revealed type_id 118 is returned as `{"type_id": 118, "data": {"value": 6.85}}` not `{"type_id": 118, "value": {"rating": 8.5}}`; the old code always returned an empty `ratings_map`, causing all players to fall back to Layer 2. Mock fixtures in `tests/test_player_import.py` updated to match live structure.

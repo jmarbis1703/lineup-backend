@@ -83,21 +83,23 @@ def percentile_to_rating(
     all_values: list[float],
     inverse: bool = False,
 ) -> float:
-    """Convert a raw stat value to a 3.0–10.0 rating via percentile rank.
+    """Convert a raw stat value to a 4.0–9.0 rating via percentile rank.
 
     rank = fraction of all_values that are <= value  (or >= value if inverse).
-    rating = 3.0 + rank * 7.0, clamped to [3.0, 10.0].
+    rating = 4.0 + rank * 5.0, clamped to [3.0, 10.0].
 
     Returns 6.5 when all_values is empty or contains no variation.
     """
     if not all_values or max(all_values) == min(all_values):
         return _LAYER3_DEFAULT
     n = len(all_values)
+    equal = sum(1 for v in all_values if v == value)
     if inverse:
-        rank = sum(1 for v in all_values if v >= value) / n
+        lower = sum(1 for v in all_values if v > value)
     else:
-        rank = sum(1 for v in all_values if v <= value) / n
-    return max(3.0, min(10.0, 3.0 + rank * 7.0))
+        lower = sum(1 for v in all_values if v < value)
+    rank = (lower + 0.5 * equal) / n
+    return max(3.0, min(10.0, 4.0 + rank * 5.0))
 
 
 def compute_layer2_composite(
