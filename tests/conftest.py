@@ -16,6 +16,7 @@ Tests that don't request any db_* fixture never touch PostgreSQL.
 """
 from __future__ import annotations
 
+import base64
 import os
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone, timedelta
@@ -30,7 +31,6 @@ from httpx import AsyncClient, ASGITransport
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.config import settings
 from app.main import app
 from app.models.fixture import Fixture
 from app.models.liquidity_config import LiquidityConfig
@@ -56,6 +56,67 @@ def _sync_url() -> str:
 def _async_url() -> str:
     raw = os.getenv("TEST_DATABASE_URL", os.getenv("DATABASE_URL", _FALLBACK_ASYNC))
     return raw.replace("+psycopg2", "+asyncpg")
+
+
+# ---------------------------------------------------------------------------
+# RSA key fixtures for Clerk JWT testing
+# ---------------------------------------------------------------------------
+
+
+def _int_to_base64url(n: int) -> str:
+    length = (n.bit_length() + 7) // 8
+    return base64.urlsafe_b64encode(n.to_bytes(length, "big")).rstrip(b"=").decode()
+
+
+@pytest.fixture(scope="session")
+def rsa_test_keys() -> dict:
+    """
+    Session-scoped RSA-2048 key pair for signing/verifying test JWTs.
+
+    Returns a dict with:
+        ``private_pem``: bytes — PEM-encoded private key for jwt.encode
+        ``jwks``: dict — JWKS payload to feed to verify_clerk_jwt
+    """
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    private_key = rsa.generate_private_key(
+        public_exponent=65537, key_size=2048, backend=default_backend()
+    )
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    )
+    nums = private_key.public_key().public_numbers()
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "use": "sig",
+                "alg": "RS256",
+                "kid": "test-key-1",
+                "n": _int_to_base64url(nums.n),
+                "e": _int_to_base64url(nums.e),
+            }
+        ]
+    }
+    return {"private_pem": private_pem, "jwks": jwks}
+
+
+@pytest.fixture(autouse=True)
+def patch_clerk_jwks(monkeypatch, rsa_test_keys: dict) -> None:
+    """
+    Patch ``_fetch_jwks`` in app.core.auth so every test uses the local RSA
+    test key instead of making a real network request to Clerk.
+    """
+    import app.core.auth as auth_module
+
+    async def _mock_fetch_jwks() -> dict:
+        return rsa_test_keys["jwks"]
+
+    monkeypatch.setattr(auth_module, "_fetch_jwks", _mock_fetch_jwks)
 
 
 # ---------------------------------------------------------------------------
@@ -148,17 +209,21 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-def auth_headers(db_session: AsyncSession):
+def auth_headers(db_session: AsyncSession, rsa_test_keys: dict):
     """
     Factory fixture.  Call ``await auth_headers("alice")`` inside a test to
     get ``{"Authorization": "Bearer <token>"}`` for a freshly created user
     (with a 1000-point portfolio).  The user is rolled back with the test.
+
+    JWTs are RS256-signed with the session-scoped test RSA key; ``_fetch_jwks``
+    is patched (via ``patch_clerk_jwks``) to return the matching public key.
     """
 
     async def _make(username: str) -> dict[str, str]:
+        clerk_id = f"user_{username}_test"
         user = User(
             email=f"{username}@test.com",
-            password_hash="$2b$12$testhashplaceholderfortestingonly",
+            clerk_id=clerk_id,
             username=username,
         )
         db_session.add(user)
@@ -171,13 +236,12 @@ def auth_headers(db_session: AsyncSession):
         db_session.add(portfolio)
         await db_session.flush()
 
-        exp = datetime.now(timezone.utc) + timedelta(
-            minutes=settings.jwt_expiration_minutes
-        )
+        exp = datetime.now(timezone.utc) + timedelta(hours=1)
         token = jwt.encode(
-            {"sub": str(user.id), "exp": exp},
-            settings.jwt_secret,
-            algorithm=settings.jwt_algorithm,
+            {"sub": clerk_id, "exp": exp},
+            rsa_test_keys["private_pem"],
+            algorithm="RS256",
+            headers={"kid": "test-key-1"},
         )
         return {"Authorization": f"Bearer {token}"}
 

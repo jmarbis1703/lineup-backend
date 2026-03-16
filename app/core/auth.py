@@ -1,47 +1,42 @@
-"""Authentication helpers: password hashing and JWT creation/decoding."""
-from datetime import datetime, timedelta, timezone
-
+"""Authentication helpers: Clerk JWKS-based RS256 JWT verification."""
+from cachetools import TTLCache
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+
+import httpx
 
 from app.config import settings
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# JWKS cache: one entry, refreshed every hour
+_jwks_cache: TTLCache = TTLCache(maxsize=1, ttl=3600)
 
 
-def hash_password(password: str) -> str:
-    """Return bcrypt hash of *password*."""
-    return _pwd_context.hash(password)
+async def _fetch_jwks() -> dict:
+    """Fetch Clerk's JWKS, cached for 1 hour."""
+    if "keys" in _jwks_cache:
+        return _jwks_cache["keys"]
+    async with httpx.AsyncClient() as client:
+        r = await client.get(settings.clerk_jwks_url, timeout=5)
+        r.raise_for_status()
+    keys = r.json()
+    _jwks_cache["keys"] = keys
+    return keys
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    """Return True if *plain* matches *hashed*."""
-    return _pwd_context.verify(plain, hashed)
-
-
-def create_jwt(user_id: str) -> str:
-    """Mint a signed JWT with *user_id* as the ``sub`` claim."""
-    exp = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.jwt_expiration_minutes
-    )
-    return jwt.encode(
-        {"sub": user_id, "exp": exp},
-        settings.jwt_secret,
-        algorithm=settings.jwt_algorithm,
-    )
-
-
-def decode_jwt(token: str) -> str:
+async def verify_clerk_jwt(token: str) -> str:
     """
-    Decode and verify *token*.  Returns the ``sub`` (user_id string).
-    Raises ``jose.JWTError`` on any failure (expired, bad signature, etc.).
+    Verify a Clerk-issued RS256 JWT via JWKS.
+
+    Returns the Clerk user ID (``sub`` claim, format: ``user_xxxx``).
+    Raises ``jose.JWTError`` on any verification failure.
     """
+    jwks = await _fetch_jwks()
     payload = jwt.decode(
         token,
-        settings.jwt_secret,
-        algorithms=[settings.jwt_algorithm],
+        jwks,
+        algorithms=["RS256"],
+        audience=settings.clerk_audience or None,
     )
     sub = payload.get("sub")
-    if sub is None:
-        raise JWTError("Missing 'sub' claim")
+    if not sub:
+        raise JWTError("Missing sub claim")
     return sub

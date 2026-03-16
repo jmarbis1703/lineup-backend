@@ -1,11 +1,27 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, leaderboard, market, portfolio, tournament, trade, websocket
+from app.api import auth, leaderboard, market, portfolio, tournament, trade, webhooks, websocket
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="LineUp API", version="1.0.0")
+    app = FastAPI(
+        title="LineUp API",
+        version="1.0.0",
+        swagger_ui_parameters={"persistAuthorization": True},
+        openapi_extra={
+            "components": {
+                "securitySchemes": {
+                    "BearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "bearerFormat": "JWT",
+                    }
+                }
+            },
+            "security": [{"BearerAuth": []}],
+        },
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -21,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
     app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["leaderboard"])
     app.include_router(tournament.router, prefix="/api/tournaments", tags=["tournaments"])
+    app.include_router(webhooks.router)
     app.include_router(websocket.router, tags=["websocket"])
 
     @app.get("/health", tags=["health"])

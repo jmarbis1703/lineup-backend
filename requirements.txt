@@ -14,8 +14,8 @@ email-validator>=2.0.0
 
 # Auth
 python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-bcrypt==4.0.1
+svix>=1.14.0
+cachetools>=5.3.0
 
 # Background workers
 celery[redis]>=5.3.0

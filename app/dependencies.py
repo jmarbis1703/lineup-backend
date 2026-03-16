@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import uuid
 from collections.abc import AsyncGenerator
 
 import sqlalchemy as sa
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -31,12 +29,11 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    FastAPI dependency that validates a Bearer JWT and returns the User row.
+    FastAPI dependency that validates a Clerk Bearer JWT and returns the User row.
 
     Raises HTTP 401 for missing/invalid/expired tokens or unknown users.
     """
-    # Import here to avoid circular imports at module load time
-    from app.core.auth import decode_jwt  # noqa: PLC0415
+    from app.core.auth import verify_clerk_jwt  # noqa: PLC0415
     from app.models.user import User  # noqa: PLC0415
 
     credentials_exception = HTTPException(
@@ -46,16 +43,11 @@ async def get_current_user(
     )
 
     try:
-        user_id_str = decode_jwt(credentials.credentials)
-    except JWTError:
+        clerk_id = await verify_clerk_jwt(credentials.credentials)
+    except Exception:
         raise credentials_exception
 
-    try:
-        user_id = uuid.UUID(user_id_str)
-    except (ValueError, AttributeError):
-        raise credentials_exception
-
-    result = await db.execute(sa.select(User).where(User.id == user_id))
+    result = await db.execute(sa.select(User).where(User.clerk_id == clerk_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception

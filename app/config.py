@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # JWT
-    jwt_secret: str = "change-me-in-production"
-    jwt_algorithm: str = "HS256"
-    jwt_expiration_minutes: int = 60
+    # Clerk
+    clerk_jwks_url: str = ""
+    clerk_webhook_secret: str = ""
+    clerk_audience: str = ""
 
     # Sportmonks
     sportmonks_api_token: str = ""
