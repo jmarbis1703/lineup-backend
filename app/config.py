@@ -9,19 +9,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Database
-    database_url: str = "postgresql+asyncpg://lineup:lineup_secret@localhost:5432/lineup"
+    # Database — required, no default (CFG-1: fail fast if missing)
+    database_url: str
 
-    # Redis
+    # Redis — safe local default
     redis_url: str = "redis://localhost:6379/0"
 
-    # Clerk
-    clerk_jwks_url: str = ""
-    clerk_webhook_secret: str = ""
-    clerk_audience: str = ""
+    # Clerk — required fields raise ValidationError at startup if absent (CFG-1)
+    clerk_jwks_url: str
+    clerk_webhook_secret: str
+    clerk_audience: str = ""  # optional — only needed for audience-restricted tokens
 
-    # Sportmonks
-    sportmonks_api_token: str = ""
+    # Sportmonks — required (CFG-1)
+    sportmonks_api_token: str
     sportmonks_base_url: str = "https://api.sportmonks.com/v3/football"
 
 

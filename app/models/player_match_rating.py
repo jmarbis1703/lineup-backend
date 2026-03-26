@@ -50,6 +50,10 @@ class PlayerMatchRating(Base):
     # NULL if Sportmonks did not provide xG
     xg: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 4))
 
+    # Fixture kickoff time from Sportmonks starting_at (§9B). NULL for rows inserted
+    # before migration 0006 — backfill by re-running refresh_match_ratings --days 90.
+    match_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )

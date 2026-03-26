@@ -29,6 +29,11 @@ class Player(Base):
     league: Mapped[Optional[str]] = mapped_column(String(100))
     league_id: Mapped[Optional[int]] = mapped_column(Integer)
     photo_url: Mapped[Optional[str]] = mapped_column(String(500))
+    bio: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    play_style: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Granular position label: GK, CB, RB, LB, RWB, LWB, CDM, CM, CAM, RM, LM, RW, LW, CF, ST
+    # Null until player import re-runs after migration 0005
+    position_specific: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow

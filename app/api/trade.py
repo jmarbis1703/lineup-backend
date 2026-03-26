@@ -7,9 +7,10 @@ a user from executing trades in the global market.
 """
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import _get_user_id_key, limiter
 from app.services import redis_pubsub
 
 from app.core.trading import (
@@ -37,7 +38,9 @@ router = APIRouter()
 
 
 @router.post("/buy", response_model=BuyResponse)
+@limiter.limit("30/minute", key_func=_get_user_id_key)
 async def buy(
+    request: Request,
     req: BuyRequest,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -72,7 +75,9 @@ async def buy(
 
 
 @router.post("/sell", response_model=SellResponse)
+@limiter.limit("30/minute", key_func=_get_user_id_key)
 async def sell(
+    request: Request,
     req: SellRequest,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),

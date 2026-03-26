@@ -3,6 +3,8 @@
 .env.prod
 .env.local
 .env.staging
+.env.production
+.env.*.local
 *.env
 
 # Docker overrides
@@ -40,6 +42,10 @@ alembic/versions/__pycache__/
 # Local debug artifacts
 sportmonks_payload_dump.json
 fetch_test_player.py
+
+# Celery runtime artifacts
+celerybeat-schedule
+celerybeat.pid
 
 # Logs
 *.log

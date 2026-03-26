@@ -17,4 +17,9 @@ COPY . .
 
 EXPOSE 8000
 
+# SEC-15: Run as a non-root system user
+RUN addgroup --system appgroup && \
+    adduser --system --ingroup appgroup appuser
+USER appuser
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

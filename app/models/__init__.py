@@ -9,6 +9,7 @@ from app.models.market_state import LmsrMarketState  # noqa: F401
 from app.models.player import Player  # noqa: F401
 from app.models.player_match_rating import PlayerMatchRating  # noqa: F401
 from app.models.portfolio import Portfolio  # noqa: F401
+from app.models.portfolio_snapshot import PortfolioSnapshot  # noqa: F401
 from app.models.position import Position  # noqa: F401
 from app.models.rating_history import RatingHistory  # noqa: F401
 from app.models.tournament import Tournament  # noqa: F401
@@ -16,6 +17,7 @@ from app.models.tournament_member import TournamentMember  # noqa: F401
 from app.models.tournament_snapshot import TournamentSnapshot  # noqa: F401
 from app.models.trade import Trade  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.watchlist import Watchlist  # noqa: F401
 
 __all__ = [
     "Base",
@@ -25,6 +27,7 @@ __all__ = [
     "Player",
     "PlayerMatchRating",
     "Portfolio",
+    "PortfolioSnapshot",
     "Position",
     "RatingHistory",
     "Tournament",
@@ -32,4 +35,5 @@ __all__ = [
     "TournamentSnapshot",
     "Trade",
     "User",
+    "Watchlist",
 ]

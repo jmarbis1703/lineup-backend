@@ -233,13 +233,13 @@ async def test_client_parses_zero_goals_as_zero_not_none() -> None:
 
 def test_position_mapping() -> None:
     """map_position_to_group handles integer IDs and string fallback correctly."""
-    # Known IDs from the test fixture
-    assert map_position_to_group("24") == "MF"   # Bellingham
-    assert map_position_to_group("25") == "MF"   # Valverde
-    assert map_position_to_group("27") == "FW"   # Benzema
-    # GK and DF entries
+    # Section type IDs from /squads/teams/{id}
+    assert map_position_to_group("24") == "GK"   # Goalkeeper section
+    assert map_position_to_group("25") == "DF"   # Defender section
+    assert map_position_to_group("26") == "MF"   # Midfielder section
+    assert map_position_to_group("27") == "FW"   # Attacker section
+    # Legacy detailed position IDs
     assert map_position_to_group("1") == "GK"
-    assert map_position_to_group("26") == "GK"
     assert map_position_to_group("2") == "DF"
     # String keyword fallback
     assert map_position_to_group("Goalkeeper") == "GK"
@@ -413,11 +413,11 @@ async def test_import_filters_by_activity(
             "id": 86,
             "name": "Real Madrid",
             "squads": [
-                {"player_id": 200100, "position_id": 24,
+                {"player_id": 200100, "position_id": 26,
                  "player": {"id": 200100, "name": "Jude Bellingham", "image_path": None}},
                 {"player_id": 300200, "position_id": 27,
                  "player": {"id": 300200, "name": "Karim Benzema", "image_path": None}},
-                {"player_id": 400300, "position_id": 25,
+                {"player_id": 400300, "position_id": 26,
                  "player": {"id": 400300, "name": "Federico Valverde", "image_path": None}},
                 {"player_id": 500400, "position_id": 2,
                  "player": {"id": 500400, "name": "Antonio Rudiger", "image_path": None}},

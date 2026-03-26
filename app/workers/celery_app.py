@@ -24,6 +24,7 @@ celery_app = Celery(
         "app.workers.oracle_update",
         "app.workers.tournaments",
         "app.workers.calibration",
+        "app.workers.snapshot",
     ],
 )
 
@@ -67,5 +68,16 @@ celery_app.conf.beat_schedule = {
     "liquidity-recalibration": {
         "task": "app.workers.calibration.liquidity_recalibration_task",
         "schedule": crontab(minute=0, hour="*/6"),
+    },
+    # §7.8 — Snapshot every user's portfolio value for history charts
+    "snapshot-portfolios-hourly": {
+        "task": "app.workers.snapshot.snapshot_all_portfolios_task",
+        "schedule": crontab(minute=0),
+    },
+    # §9A — Refresh match ratings daily post-matchday; to add leagues for Step 7,
+    # update MATCH_RATING_LEAGUES in app/workers/player_import.py
+    "refresh-match-ratings-daily": {
+        "task": "app.workers.player_import.refresh_match_ratings_task",
+        "schedule": crontab(hour=7, minute=0),  # 07:00 UTC daily
     },
 }

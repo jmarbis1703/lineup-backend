@@ -170,3 +170,49 @@ def initialize_market(r_base: float, b_min: float) -> tuple[float, float]:
         q_down = b_min * math.log((1.0 - P) / P)
 
     return (q_up, q_down)
+
+
+# ---------------------------------------------------------------------------
+# §3.8  Volatility tier bucketing
+# ---------------------------------------------------------------------------
+
+def compute_volatility_tiers(b_effective_map: dict[int, float]) -> dict[int, str]:
+    """Assign a volatility tier to each player based on their b_effective rank.
+
+    Higher b_effective = more liquidity = less price movement = LOWER volatility.
+    Tiers are relative to the current population — percentile-based.
+
+    Bucketing (ascending sort by b_effective):
+      Bottom 33rd percentile → "high"   (lowest liquidity, most volatile)
+      33rd–66th percentile   → "medium"
+      Top 33rd percentile    → "low"    (highest liquidity, least volatile)
+
+    Edge cases:
+      Empty map            → {}
+      Fewer than 3 players → all "medium"
+      All identical values → all "medium"
+    """
+    if not b_effective_map:
+        return {}
+
+    n = len(b_effective_map)
+    if n < 3:
+        return {pid: "medium" for pid in b_effective_map}
+
+    sorted_ids = sorted(b_effective_map, key=lambda pid: b_effective_map[pid])
+
+    if b_effective_map[sorted_ids[0]] == b_effective_map[sorted_ids[-1]]:
+        return {pid: "medium" for pid in b_effective_map}
+
+    low_cutoff = n // 3          # first index NOT in "high" band
+    high_cutoff = (2 * n) // 3  # first index in "low" band
+
+    result: dict[int, str] = {}
+    for rank, pid in enumerate(sorted_ids):
+        if rank < low_cutoff:
+            result[pid] = "high"
+        elif rank < high_cutoff:
+            result[pid] = "medium"
+        else:
+            result[pid] = "low"
+    return result

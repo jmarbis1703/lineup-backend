@@ -31,3 +31,6 @@ class Tournament(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+    invite_code: Mapped[str | None] = mapped_column(
+        String(8), unique=True, nullable=True, index=True
+    )

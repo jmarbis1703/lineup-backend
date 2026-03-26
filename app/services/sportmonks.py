@@ -16,25 +16,24 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 POSITION_MAP: dict[int, str] = {
-    # Goalkeeper (2)
+    # Section type IDs returned by /squads/teams/{id}
+    24: "GK",  # Goalkeeper section
+    25: "DF",  # Defender section
+    26: "MF",  # Midfielder section
+    27: "FW",  # Attacker section
+    # Legacy detailed position IDs
     1: "GK",
-    26: "GK",
-    # Defender (6)
     2: "DF",
     3: "DF",
     4: "DF",
     5: "DF",
     6: "DF",
     7: "DF",
-    # Midfielder (7)
     8: "MF",
     9: "MF",
     10: "MF",
     11: "MF",
     12: "MF",
-    24: "MF",  # Central Midfielder (e.g. Bellingham)
-    25: "MF",  # Box-to-Box Midfielder (e.g. Valverde)
-    # Forward (8)
     13: "FW",
     14: "FW",
     15: "FW",
@@ -42,7 +41,6 @@ POSITION_MAP: dict[int, str] = {
     17: "FW",
     18: "FW",
     19: "FW",
-    27: "FW",  # Centre Forward (e.g. Benzema)
 }
 
 
@@ -88,6 +86,9 @@ _TYPE_CLEAN_SHEET = 56
 _TYPE_GOALS_CONCEDED = 57
 _TYPE_XG = 117
 _TYPE_MATCH_RATING = 118
+# Lineup-context type_ids differ from statistics-context type_ids.
+# Do NOT reuse season-stat constants in _parse_lineup_stats.
+_TYPE_LINEUP_MINUTES = 1584  # minutes played in fixture lineup details (verified: fixture 19427186)
 
 
 class SportmonksClient:
@@ -106,13 +107,18 @@ class SportmonksClient:
         )
 
     async def _get(self, path: str, params: dict | None = None) -> dict:
-        """Shared GET with 1.2 s inter-request delay and 429 retry backoff."""
-        await asyncio.sleep(1.2)
+        """Shared GET with 3.5s pre-request delay and 429 retry backoff.
+        Sleep fires before every request so no two requests fire within 3.5s
+        regardless of phase transitions (squads → stats → fixtures).
+        Retry-After is floor'd to at least 30 * 2**attempt to prevent rapid retries.
+        """
         url = f"{self._base_url}/{path.lstrip('/')}"
+        await asyncio.sleep(3.5)
         for attempt in range(3):
             resp = await self._client.get(url, params=params or {})
             if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", 0)) or (30 * (2 ** attempt))
+                _raw = int(resp.headers.get("Retry-After", 0) or 0)
+                retry_after = max(_raw, 30 * (2 ** attempt))
                 logger.warning(
                     "Rate-limited by Sportmonks; waiting %ss (attempt %d)",
                     retry_after,
@@ -141,11 +147,15 @@ class SportmonksClient:
         )
         standings = standings_data.get("data", [])
         team_name_map: dict[int, str] = {}
+        team_position_map: dict[int, int] = {}
         for s in standings:
             tid = s.get("participant_id")
             if tid:
                 participant = s.get("participant") or {}
                 team_name_map[tid] = participant.get("name") or f"Team {tid}"
+                pos = s.get("position")
+                if pos is not None:
+                    team_position_map[tid] = int(pos)
         team_ids = list({s["participant_id"] for s in standings if s.get("participant_id")})
 
         teams: list[dict] = []
@@ -158,6 +168,7 @@ class SportmonksClient:
                 "id": team_id,
                 "name": team_name_map.get(team_id, f"Team {team_id}"),
                 "squads": squad_data.get("data", []),
+                "position": team_position_map.get(team_id),  # int (1-based) or None
             })
 
         return teams

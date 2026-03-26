@@ -1,29 +1,36 @@
 # Web framework
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
+fastapi==0.135.1
+uvicorn[standard]==0.42.0
 
 # Database
-sqlalchemy[asyncio]>=2.0.0
-asyncpg>=0.29.0
-psycopg2-binary>=2.9.0
-alembic>=1.13.0
+sqlalchemy[asyncio]==2.0.48
+asyncpg==0.31.0
+psycopg2-binary==2.9.11
+alembic==1.18.4
 
 # Settings / validation
-pydantic-settings>=2.0.0
-email-validator>=2.0.0
+pydantic-settings==2.13.1
+email-validator==2.3.0
 
 # Auth
-python-jose[cryptography]>=3.3.0
-svix>=1.14.0
-cachetools>=5.3.0
+python-jose[cryptography]==3.5.0
+svix==1.88.0
+cachetools==7.0.5
 
 # Background workers
-celery[redis]>=5.3.0
-redis>=5.0.0
+celery[redis]==5.6.2
+redis==6.4.0
+
+# Rate limiting (SEC-09)
+slowapi>=0.1.9        # not installed in current venv — pin pending first install
+limits[redis]>=3.7.0  # not installed in current venv — pin pending first install
 
 # HTTP client
-httpx>=0.27.0
+httpx==0.28.1
 
 # Testing
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
+pytest==9.0.2
+pytest-asyncio==1.3.0
+
+# --- Dev/audit tools ---
+pip-audit==2.10.0
