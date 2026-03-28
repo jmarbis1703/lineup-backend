@@ -169,8 +169,8 @@ Auth is handled entirely by Clerk (RS256 JWT in `Authorization: Bearer <token>`)
 
 | Method | Path | Response model | Data status |
 |--------|------|---------------|-------------|
-| `GET` | `/api/market/players` | `PlayerMarketResponse[]` | **LIVE** — `change_24h` is `null` until the `rating_history` table has rows older than 24 h; supports `?league_id=` and `?search=`. `bio` and `play_style` are `null` until Sportmonks sync; `b_effective` is always a `float`; `volatility_tier` is `"low"\|"medium"\|"high"` (percentile-bucketed from `b_effective` distribution); `position_specific` null until re-import after migration 0005. `league` field populated from `league_id` fallback in `_build_response()`; `players.league` column backfilled for all active PL players (2026-03-23). League ID map: 8=Premier League, 564=La Liga, 384=Serie A, 301=Ligue 1, 82=Bundesliga. |
-| `GET` | `/api/market/players/{id}` | `PlayerMarketResponse` | **LIVE** — returns 200 even when `is_active=false` (close-only mode §5.1). Includes `bio: str\|null`, `play_style: str\|null`, `position_specific: str\|null` (granular position: CB, CDM, ST, etc.; null until re-import after migration 0005), `b_effective: float`, `volatility_tier: str` (reads Redis cache `volatility_tier:{id}`, TTL 6h; on miss, queries full active population and warms cache; inactive players fall back to `"medium"`) |
+| `GET` | `/api/market/players` | `PlayerMarketResponse[]` | **LIVE** — `change_24h` is `null` until the `rating_history` table has rows older than 24 h; supports `?league_id=` and `?search=`. `bio` and `play_style` are `null` until Sportmonks sync; `b_effective` is always a `float`; `volatility_tier` is `"low"\|"medium"\|"high"` (percentile-bucketed from `b_effective` distribution). `league` field populated from `league_id` fallback in `_build_response()`; `players.league` column backfilled for all active PL players (2026-03-23). League ID map: 8=Premier League, 564=La Liga, 384=Serie A, 301=Ligue 1, 82=Bundesliga. |
+| `GET` | `/api/market/players/{id}` | `PlayerMarketResponse` | **LIVE** — returns 200 even when `is_active=false` (close-only mode §5.1). Includes `bio: str\|null`, `play_style: str\|null`, `b_effective: float`, `volatility_tier: str` (reads Redis cache `volatility_tier:{id}`, TTL 6h; on miss, queries full active population and warms cache; inactive players fall back to `"medium"`) |
 | `GET` | `/api/market/players/{id}/chart` | `ChartPoint[]` | **LIVE** — empty array until `rating_history` rows exist |
 | `GET` | `/api/market/players/{id}/stats` | `PlayerStatsResponse` | **RETURNS ZEROS** until `scripts/refresh_match_ratings.py` runs. Seed sentinel (fixture_id=0) is excluded from aggregation. **New fields (2026-03-23):** `goals_conceded: int` (GK: goals allowed in last 5 matches, defaults 0), `tackles: int` (all positions, defaults 0), `minutes_per_game: int\|null` (average mins/match; `null` when no match data). `vaep` is always `0.0` pending event-level data. |
 | `GET` | `/api/market/players/public` | `PublicPlayerResponse[]` | **LIVE** — minimal subset for landing page; `change_24h` null until 24 h of history |
@@ -430,15 +430,17 @@ lineups.detailedposition in fixture includes.
    - Fix: direct DB UPDATE on the 4 affected rows (Xavi Simons, Florian Wirtz,
      Douglas Luiz, Morgan Gibbs-White).
 
-3. position_specific feature removed entirely
+3. position_specific removed entirely (Session 2–3, completed Session 14)
    - Root cause: detailedposition.developer_name is not available on the
      Sportmonks Starter plan — returns empty object from squad, player,
      and fixture endpoints.
    - Dead code removed: DEVELOPER_NAME_TO_POSITION dict,
      map_position_specific_from_developer_name(),
      _extract_detailed_positions().
-   - position_specific column and Pydantic field retained in DB/schema,
-     always returns NULL. UI falls back to position_group ?? '—'.
+   - Column was mistakenly left in the ORM model without a migration,
+     causing UndefinedColumnError on every import. Session 14 completed
+     the removal from model, schema, API handler, and worker.
+   - UI falls back to position_group ?? '—'.
 
 **Rules added to prevent recurrence:**
 - Never add nested includes to fixture fetches without auditing rate limit
