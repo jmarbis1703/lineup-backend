@@ -194,9 +194,8 @@ def _collect_league_entries(
                 continue
             raw_pos = str(entry.get("position_id", ""))
             pg = map_position_to_group(raw_pos)
-            ps = None  # position_specific not available on Starter plan; always NULL
             stats = stats_cache.get(pid, {})
-            result.append((entry, team_name, league_id, pg, ps, stats))
+            result.append((entry, team_name, league_id, pg, stats))
 
     return result
 
@@ -207,7 +206,6 @@ async def _upsert_player(
     team_name: str,
     league_id: int,
     position_group: str,
-    position_specific: str | None,
     stats: dict[str, Any],
     b_min: float,
     all_players_stats: list[dict],
@@ -230,7 +228,6 @@ async def _upsert_player(
             team=team_name,
             position=str(squad_entry.get("position_id", "")),
             position_group=position_group,
-            position_specific=position_specific,
             league_id=league_id,
             photo_url=player_data.get("image_path"),
             is_active=True,
@@ -241,7 +238,6 @@ async def _upsert_player(
         player.team = team_name
         player.position = str(squad_entry.get("position_id", ""))
         player.position_group = position_group
-        player.position_specific = position_specific
         player.is_active = True
         player.last_synced_at = datetime.now(timezone.utc)
     await db.flush()
@@ -386,8 +382,7 @@ async def initial_player_import(
         # Fetch recent fixtures per team to collect per-match ratings (Layer 1).
         # 21-day window (~3 fixtures/team) keeps entity quota under daily limit.
         # lineups.detailedposition is NOT included — Starter plan entity quota is
-        # too small to afford it at 44 entities/fixture. position_specific is NULL
-        # for all players until a quota-efficient source is available.
+        # too small to afford it at 44 entities/fixture.
         now = datetime.now(timezone.utc)
         date_to = now.strftime("%Y-%m-%d")
         date_from = (now - timedelta(days=21)).strftime("%Y-%m-%d")
@@ -419,7 +414,7 @@ async def initial_player_import(
 
     # Build cross-league peer pool (all selected players across all leagues)
     all_players_stats: list[dict] = []
-    for entry, _team_name, _league_id, pg, _ps, stats in all_league_data:
+    for entry, _team_name, _league_id, pg, stats in all_league_data:
         player_data = entry.get("player", {})
         pid = player_data.get("id") or entry.get("player_id")
         if not pid:
@@ -437,10 +432,10 @@ async def initial_player_import(
     for lid, items in league_groups.items():
         league_count = 0
         imported_ids: set[int] = set()
-        for entry, team_name, _lid, pg, ps, stats in items:
+        for entry, team_name, _lid, pg, stats in items:
             try:
                 p = await _upsert_player(
-                    db, entry, team_name, lid, pg, ps, stats, b_min, all_players_stats
+                    db, entry, team_name, lid, pg, stats, b_min, all_players_stats
                 )
                 if p:
                     total += 1
@@ -518,9 +513,8 @@ async def sync_new_players(
                         stats = {}
                     raw_pos = str(entry.get("position_id", ""))
                     pg = map_position_to_group(raw_pos)
-                    ps = None
                     p = await _upsert_player(
-                        db, entry, team_name, league_id, pg, ps, stats, b_min, []
+                        db, entry, team_name, league_id, pg, stats, b_min, []
                     )
                     if p:
                         new_count += 1

@@ -206,7 +206,6 @@ def _build_response(
         change_24h=change_24h,
         bio=player.bio,
         play_style=player.play_style,
-        position_specific=player.position_specific,
         volatility_tier=volatility_tier,
         recent_form=s.get("recent_form", []),
         goals=s.get("goals", 0),

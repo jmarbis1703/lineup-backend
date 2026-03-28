@@ -33,7 +33,6 @@ class PlayerMarketResponse(BaseModel):
     change_24h: Optional[float] = None  # percent, positive = up
     bio: Optional[str] = None
     play_style: Optional[str] = None
-    position_specific: Optional[str] = None  # granular: CB, RB, LB, CDM, CM, CAM, ST, etc.
     volatility_tier: str = "medium"  # "low" | "medium" | "high" — percentile rank of b_effective
     # Stats fields — populated from last 5 PlayerMatchRating rows.
     # All default to zero / empty so a brand-new player always renders correctly.
