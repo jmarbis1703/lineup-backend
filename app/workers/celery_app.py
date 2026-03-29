@@ -80,4 +80,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.player_import.refresh_match_ratings_task",
         "schedule": crontab(hour=7, minute=0),  # 07:00 UTC daily
     },
+    # §market-stability — Recompute b floor from live user count every hour.
+    # B_FLOOR decreases as the user base grows, keeping prices tight at scale
+    # and stable during beta.  b_base and n_target tunable via env vars.
+    "refresh-b-floor-hourly": {
+        "task": "app.workers.player_import.refresh_b_floor_task",
+        "schedule": crontab(minute=0),  # every hour on the hour
+    },
 }

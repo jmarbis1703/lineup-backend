@@ -781,6 +781,30 @@ def _make_session() -> tuple:
     return engine, factory
 
 
+@celery_app.task(name="app.workers.player_import.refresh_b_floor_task")
+def refresh_b_floor_task() -> dict:
+    """Celery entry point for §market-stability hourly b floor refresh.
+
+    Invalidates the cached user count, recomputes B_FLOOR from the live
+    user count, and rewrites the Redis cache key.  Returns the new floor
+    value for logging and monitoring.
+    """
+
+    async def _run() -> dict:
+        from app.services.redis_cache import refresh_b_floor
+
+        engine, factory = _make_session()
+        try:
+            async with factory() as db:
+                floor = await refresh_b_floor(settings.redis_url, db)
+                logger.info("refresh_b_floor_task: B_FLOOR=%.2f", floor)
+                return {"b_floor": floor}
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(_run())
+
+
 @celery_app.task(name="app.workers.player_import.refresh_match_ratings_task")
 def refresh_match_ratings_task() -> dict:
     """Celery entry point for §9A daily match ratings refresh.

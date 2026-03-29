@@ -24,5 +24,14 @@ class Settings(BaseSettings):
     sportmonks_api_token: str
     sportmonks_base_url: str = "https://api.sportmonks.com/v3/football"
 
+    # LMSR dynamic b floor — controls market stability at low user counts.
+    # b_effective = max(B_FLOOR(n_users), b_min + alpha * shares)
+    # B_FLOOR = lmsr_b_base * max(1, lmsr_n_target / max(lmsr_n_min, n_users))
+    # At n_users=lmsr_n_target the floor equals lmsr_b_base (anchor point).
+    # Override via env vars LMSR_B_BASE, LMSR_N_TARGET, LMSR_N_MIN.
+    lmsr_b_base: float = 10000.0   # target b at full scale (< 1% impact per 100pt trade)
+    lmsr_n_target: int = 100       # user count at which floor = b_base
+    lmsr_n_min: int = 5            # minimum user count (prevents division explosion)
+
 
 settings = Settings()
