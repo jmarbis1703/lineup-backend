@@ -30,16 +30,74 @@ def _log_sum_exp(q_up: float, q_down: float, b: float) -> float:
 # §3.2  Effective liquidity parameter
 # ---------------------------------------------------------------------------
 
-def effective_b(q_up: float, q_down: float, alpha: float, b_min: float) -> float:
+# ─────────────────────────────────────────────────────────────────────────────
+# DYNAMIC b FLOOR — Market Stability Mechanism
+#
+# PURPOSE: Prevents extreme price movements when user count is low.
+# At beta (2–10 users), a 100-point trade would otherwise move a player's
+# price by ~60%.  The floor raises b_effective so a 100-point trade
+# causes < 1% price movement until the market grows organically.
+#
+# AUTOMATIC NO-OP: As the user base grows and trading volume accumulates,
+# the natural b = b_min + alpha × (q_up + q_down) overtakes B_FLOOR and
+# the floor becomes mathematically irrelevant — no code change required.
+#
+# REMOVAL CRITERIA: Do not remove this function.  It becomes irrelevant
+# once average market volume exceeds ~200,000 pts per player.
+# Monitor via:  SELECT AVG(q_up + q_down) FROM lmsr_market_state;
+# If result > 2,000,000 shares, the floor is superseded.
+#
+# CONFIG: LMSR_B_BASE, LMSR_N_TARGET, LMSR_N_MIN in app/config.py —
+# tunable via env vars without a redeploy.
+# ─────────────────────────────────────────────────────────────────────────────
+def b_floor_for_users(
+    n_users: int,
+    b_base: float,
+    n_target: int,
+    n_min: int,
+) -> float:
+    """Compute the minimum b value for the current user count.
+
+    Returns a high floor when the user base is small, decreasing toward
+    b_base as the platform grows.  At n_users >= n_target the floor equals
+    b_base.  Beyond n_target it stays at b_base (max() clamp).
+
+    Formula:
+        B_FLOOR = b_base * max(1, n_target / max(n_min, n_users))
+
+    Examples (b_base=10000, n_target=100, n_min=5):
+        n=5   → 200000  (< 0.05% per 100pt trade)
+        n=20  → 50000
+        n=50  → 20000
+        n=100 → 10000   (anchor — < 1% per 100pt trade)
+        n=500 → 10000   (floor stops scaling; alpha takes over)
+    """
+    safe_n = max(n_min, n_users)
+    multiplier = max(1.0, n_target / safe_n)
+    return b_base * multiplier
+
+
+def effective_b(
+    b_min: float,
+    alpha: float,
+    q_up: float,
+    q_down: float,
+    b_floor: float = 0.0,
+) -> float:
     """Compute the effective liquidity parameter b_eff.
 
-    b_eff = b_min + alpha * (q_up + q_down)
+    b_eff = max(b_floor, b_min + alpha * (q_up + q_down))
 
-    b_eff grows as total outstanding shares increase, providing
-    liquidity-sensitive slippage (INV-04: always > 0 because b_min > 0
-    and alpha, q_up, q_down >= -0.01).
+    The natural component grows as total outstanding shares increase,
+    providing liquidity-sensitive slippage (INV-04: always > 0 because
+    b_min > 0 and alpha, q_up, q_down >= -0.01).
+
+    b_floor is an optional lower bound supplied by the dynamic b floor
+    mechanism (§market-stability).  When omitted (default 0.0) the
+    function is equivalent to the original formula with no floor.
     """
-    return b_min + alpha * (q_up + q_down)
+    natural_b = b_min + alpha * (q_up + q_down)
+    return max(natural_b, b_floor)
 
 
 # ---------------------------------------------------------------------------

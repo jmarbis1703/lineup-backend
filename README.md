@@ -338,6 +338,100 @@ Per-position stat weights are in `_POSITION_WEIGHTS` in `app/core/oracle.py`. Ea
 
 ---
 
+## LMSR Dynamic b Floor
+
+### What it is
+
+The b floor is a dynamic liquidity protection mechanism that prevents extreme price movements when the user base is small. It sets a minimum value for the LMSR b parameter, computed from the current number of active users.
+
+### Why it exists
+
+The LMSR b parameter was calibrated for a market with ~100 active users. At beta scale (2–10 users), a single 100-point trade would move a player's price by 60% or more. The b floor raises the effective b so that a 100-point trade moves the price by less than 1% until the user base grows organically.
+
+### Formula
+
+```
+B_FLOOR = LMSR_B_BASE × max(1, LMSR_N_TARGET / max(LMSR_N_MIN, n_users))
+
+b_effective = max(B_FLOOR, b_min + alpha × volume)
+```
+
+Config values (env vars):
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `LMSR_B_BASE` | `10000` | Target b at full scale (~100 users); < 1% impact per 100pt trade |
+| `LMSR_N_TARGET` | `100` | User count at which B_FLOOR equals LMSR_B_BASE (anchor point) |
+| `LMSR_N_MIN` | `5` | Safety floor on user count; prevents division explosion |
+
+### Price impact by user count (100-point trade, fresh market)
+
+| Users | b_effective | Price impact |
+|-------|-------------|--------------|
+| 5 | 200,000 | ~0.05% |
+| 10 | 100,000 | ~0.10% |
+| 50 | 20,000 | ~0.50% |
+| 100 | 10,000 | ~1.00% |
+| 500+ | 10,000 | ~1.00% (B_FLOOR plateaus; alpha takes over at high volume) |
+
+### Where it lives
+
+| Concern | Location |
+|---------|----------|
+| Formula | `app/core/lmsr.py` → `b_floor_for_users()` |
+| Application | `app/core/trading.py` → `execute_buy()`, `execute_sell()`, `preview_buy()` |
+| Cache | Redis key `lmsr_b_floor`, TTL 600 s (10 min) |
+| User count cache | Redis key `user_count_cache`, TTL 600 s |
+| Refresh task | `app/workers/player_import.py` → `refresh_b_floor_task` |
+| Beat schedule | `celery_app.py` → `refresh-b-floor-hourly` (every hour on the hour) |
+| Fallback chain | Redis miss → `COUNT(DISTINCT user_id) FROM portfolios` → `LMSR_N_MIN=5` |
+
+### Removal / Supersession Criteria
+
+The b floor does **not** need to be removed — it is designed to become a no-op automatically as the market grows.
+
+However, explicit review is required at these thresholds:
+
+**THRESHOLD 1 — 100 active users**
+At this point `B_FLOOR = LMSR_B_BASE = 10,000`. The floor is at its minimum design value.
+Action: Verify in production that price movements feel correct. Consider increasing `LMSR_B_BASE` if markets still feel too reactive.
+
+**THRESHOLD 2 — Average market volume exceeds 200,000 points per player**
+At this point the natural `b_effective = b_min + alpha × volume` exceeds B_FLOOR on its own. The floor becomes mathematically irrelevant.
+Action: confirm via:
+```sql
+SELECT AVG(q_up + q_down) FROM lmsr_market_state;
+```
+If result > 2,000,000 (shares), the floor is superseded. The `refresh_b_floor_task` Celery task can be disabled but does no harm if left running.
+
+**THRESHOLD 3 — Platform leaves beta**
+Action: Review `LMSR_B_BASE`, `LMSR_N_TARGET` values with actual trading data. Adjust via env vars without a redeploy. Do **not** remove the code — it is a permanent safety mechanism.
+
+### What NOT to do
+
+- **Do NOT** hardcode `LMSR_B_BASE=0` to "disable" it. Set `LMSR_B_BASE=100` (same as `b_min`) to make the floor trivially small instead.
+- **Do NOT** delete `b_floor_for_users()` — it may be needed again if user count drops (e.g. after a platform reset).
+- **Do NOT** set `LMSR_N_TARGET` to a very large number without recalculating the price impact table above.
+
+### Monitoring
+
+```bash
+# Check current b floor
+docker compose exec redis redis-cli get lmsr_b_floor
+
+# Check current user count cache
+docker compose exec redis redis-cli get user_count_cache
+
+# Force a refresh
+docker compose exec celery_worker celery -A app.workers.celery_app:celery_app \
+  call app.workers.player_import.refresh_b_floor_task
+
+# Flush b floor cache (next trade will recompute)
+docker compose exec redis redis-cli del lmsr_b_floor user_count_cache
+```
+
+---
+
 ## Production Deployment
 
 ### First-time deploy
@@ -636,6 +730,7 @@ cd lineup-nextjs && npm audit --audit-level=high
 | Step 7 | Multi-league support — daily refresh_match_ratings for all 5 leagues | 🔲 TODO — add league IDs (82, 301, 384, 564) to MATCH_RATING_LEAGUES in player_import.py. Imports done (Session 12); daily beat task currently PL only. |
 | Ranking Fix | Two-pass import for new player rating bootstrap | 🔲 TODO — medium complexity, plan as dedicated task |
 | Session 13 | Security Audit + Hardening | ✅ COMPLETE (Session 13, 2026-03-26) — SEC-01–20: credentials scrubbed, rate limiting (Redis-backed), WebSocket opaque ticket, CSP/HSTS headers, non-root Docker, CORS lock-down, global 500 handler, leaderboard display_name, dep pinning, picomatch CVE resolved. See Security § Session 13 Fixes. |
+| Session 13 — Dynamic b Floor (Market Stability) | Prevents extreme price movements at beta scale. Automatically scales as users grow. | ✅ COMPLETE (2026-03-29) — `b_floor_for_users()` in lmsr.py; applied in execute_buy/sell/preview_buy; Redis-cached with 10-min TTL; hourly Celery Beat refresh; Redis→DB→N_MIN fallback chain. See "LMSR Dynamic b Floor" section for full details and removal criteria. |
 | Security BL-1 | Add `gt=0` validator to buy/sell request schemas (`schemas/trade.py`) | 🟠 HIGH — prevents zero/negative quantity requests reaching LMSR engine |
 | Security T-1 | Add membership check to `GET /tournaments/{id}/leaderboard` | 🟡 MEDIUM — currently any authenticated user can view any tournament leaderboard |
 | Security T-2 | Add self-join guard to both tournament join endpoints | 🟡 MEDIUM — creator can currently join their own tournament twice via different endpoints |

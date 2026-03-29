@@ -17,6 +17,7 @@ from decimal import ROUND_DOWN, Decimal
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.lmsr import (
     calculate_shares_for_budget,
     effective_b,
@@ -30,6 +31,7 @@ from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.rating_history import RatingHistory
 from app.models.trade import Trade
+from app.services.redis_cache import get_b_floor
 
 # ---------------------------------------------------------------------------
 # Precision constant
@@ -101,6 +103,16 @@ async def execute_buy(
     Caller is responsible for committing the session.
     """
     # ------------------------------------------------------------------
+    # 0. Fetch dynamic b floor BEFORE any DB locks (§market-stability).
+    #    B_FLOOR: high when few users, decreases toward LMSR_B_BASE as
+    #    user count grows.  b is fixed for the duration of this trade —
+    #    preserves LMSR budget-balance (b must be consistent across
+    #    C_before / C_after).  See README "LMSR Dynamic b Floor" section
+    #    and lmsr.py:b_floor_for_users() for formula and removal criteria.
+    # ------------------------------------------------------------------
+    b_floor_f = await get_b_floor(settings.redis_url, db)
+
+    # ------------------------------------------------------------------
     # 1. Lock portfolio row FIRST (INV-05)
     # ------------------------------------------------------------------
     port_result = await db.execute(
@@ -148,7 +160,7 @@ async def execute_buy(
     q_down_f = float(market.q_down)
     alpha_f = float(market.alpha)
     b_min_f = float(market.b_min)
-    b = effective_b(q_up_f, q_down_f, alpha_f, b_min_f)
+    b = effective_b(b_min_f, alpha_f, q_up_f, q_down_f, b_floor=b_floor_f)
     is_up = direction == "UP"
 
     raw_shares = calculate_shares_for_budget(
@@ -176,7 +188,7 @@ async def execute_buy(
         new_q_up = market.q_up
         new_q_down = market.q_down + shares_dec
 
-    b_new = effective_b(float(new_q_up), float(new_q_down), alpha_f, b_min_f)
+    b_new = effective_b(b_min_f, alpha_f, float(new_q_up), float(new_q_down), b_floor=b_floor_f)
     rating_after = _d4(lmsr_rating(float(new_q_up), float(new_q_down), b_new))
 
     market.q_up = new_q_up
@@ -285,6 +297,14 @@ async def execute_sell(
     Caller is responsible for committing the session.
     """
     # ------------------------------------------------------------------
+    # 0. Fetch dynamic b floor BEFORE any DB locks (§market-stability).
+    #    B_FLOOR: high when few users, decreases toward LMSR_B_BASE as
+    #    user count grows.  See README "LMSR Dynamic b Floor" and
+    #    lmsr.py:b_floor_for_users() for formula and removal criteria.
+    # ------------------------------------------------------------------
+    b_floor_f = await get_b_floor(settings.redis_url, db)
+
+    # ------------------------------------------------------------------
     # 1. Lock portfolio row FIRST (INV-05)
     # ------------------------------------------------------------------
     port_result = await db.execute(
@@ -325,7 +345,7 @@ async def execute_sell(
     q_down_f = float(market.q_down)
     alpha_f = float(market.alpha)
     b_min_f = float(market.b_min)
-    b = effective_b(q_up_f, q_down_f, alpha_f, b_min_f)
+    b = effective_b(b_min_f, alpha_f, q_up_f, q_down_f, b_floor=b_floor_f)
     shares_f = float(shares)
 
     # ------------------------------------------------------------------
@@ -357,7 +377,7 @@ async def execute_sell(
         new_q_up = market.q_up
         new_q_down = market.q_down - shares
 
-    b_new = effective_b(float(new_q_up), float(new_q_down), alpha_f, b_min_f)
+    b_new = effective_b(b_min_f, alpha_f, float(new_q_up), float(new_q_down), b_floor=b_floor_f)
     rating_after = _d4(lmsr_rating(float(new_q_up), float(new_q_down), b_new))
     refund = _d6(refund_f)
 
@@ -426,6 +446,11 @@ async def preview_buy(
 
     Returns dict: {shares, cost, rating_after}.
     """
+    # Fetch b floor before market query — no locks here, but consistent with
+    # execute_buy / execute_sell so preview accurately reflects real trade
+    # behaviour.  See README "LMSR Dynamic b Floor" for details.
+    b_floor_f = await get_b_floor(settings.redis_url, db)
+
     market_result = await db.execute(
         sa.select(LmsrMarketState).where(LmsrMarketState.player_id == player_id)
     )
@@ -437,7 +462,7 @@ async def preview_buy(
     q_down_f = float(market.q_down)
     alpha_f = float(market.alpha)
     b_min_f = float(market.b_min)
-    b = effective_b(q_up_f, q_down_f, alpha_f, b_min_f)
+    b = effective_b(b_min_f, alpha_f, q_up_f, q_down_f, b_floor=b_floor_f)
     is_up = direction == "UP"
 
     raw_shares = calculate_shares_for_budget(
@@ -453,7 +478,7 @@ async def preview_buy(
         new_q_up_f = q_up_f
         new_q_down_f = q_down_f + shares_f
 
-    b_new = effective_b(new_q_up_f, new_q_down_f, alpha_f, b_min_f)
+    b_new = effective_b(b_min_f, alpha_f, new_q_up_f, new_q_down_f, b_floor=b_floor_f)
     rating_after = _d4(lmsr_rating(new_q_up_f, new_q_down_f, b_new))
 
     return {
