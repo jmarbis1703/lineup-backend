@@ -409,10 +409,14 @@ async def get_player_chart(
     if player_exists is None:
         raise HTTPException(status_code=404, detail="Player not found")
 
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     rows = (
         await db.execute(
             sa.select(RatingHistory)
-            .where(RatingHistory.player_id == player_id)
+            .where(
+                RatingHistory.player_id == player_id,
+                RatingHistory.recorded_at >= cutoff,
+            )
             .order_by(RatingHistory.recorded_at.asc())
         )
     ).scalars().all()
