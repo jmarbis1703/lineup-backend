@@ -201,3 +201,31 @@ and `team="Unknown"` for every player.
 
 ## Step 62 (2026-03-16): Fix `_extract_match_ratings` for live API payload structure
 Updated `_extract_match_ratings` to handle live API payload structure `{'data': {'value': float}}` with fallback to legacy `{'value': {'rating': ...}}`. Live probe revealed type_id 118 is returned as `{"type_id": 118, "data": {"value": 6.85}}` not `{"type_id": 118, "value": {"rating": 8.5}}`; the old code always returned an empty `ratings_map`, causing all players to fall back to Layer 2. Mock fixtures in `tests/test_player_import.py` updated to match live structure.
+
+---
+
+## Session 15 (2026-04-06): Price Anomaly Fixes — Phantom % Changes + Chart Dual-Line Rendering
+
+### Completed
+
+**S15-1 — Phantom price change fix (`change_24h` source filter)**
+- **Root cause:** `_get_change_24h_map()` in `app/api/market.py` queried `rating_history` without filtering on `source`. Oracle rows (`source="oracle_update"`) containing match-performance scores (e.g. 4.57) were compared against `LmsrMarketState.current_rating` (LMSR market price, e.g. 7.05), producing spurious % changes of 30–70% with no user trades.
+- **Fix:** Added `RatingHistory.source.in_(["trade", "market_init"])` to the WHERE clause in `_get_change_24h_map()`. Oracle rows are now excluded from the 24h baseline entirely. Players with no trade/market_init history older than 24h correctly return `change_24h = None`.
+- **Files:** `app/api/market.py` (lines ~128–132)
+- **No DB migration. No breaking change.**
+
+**S15-2 — Chart dual-line rendering (Market Price solid / Match Rating dashed)**
+- **Root cause:** `Sparkline.tsx` mapped all `RatingHistory` rows to a single recharts `Line`, including `source="oracle_update"` rows with oracle scores. Oracle scores diverge from the LMSR market price (both 0–10 but semantically different), producing discrete jumps. The chart's rightmost point (oracle score) diverged from the header's `current_rating` (LMSR price), appearing as a bug.
+- **Fix:** Split into two recharts `Line` components sharing one data array: `vMarket` (solid, `source !== "oracle_update"`) and `vOracle` (dashed, `strokeDasharray="4 3"`, `strokeOpacity=0.55`, `source === "oracle_update"`). `connectNulls={false}` on both. Tooltip distinguishes "Market Price" vs "Match Rating" via `formatter` returning `[value, name]` tuple.
+- **Files:** `lineup-nextjs/components/Sparkline.tsx`
+- **No schema changes. Chart endpoint (`/chart`) already returned `source` field — no backend change needed.**
+
+**S15-3 — Documentation**
+- `lineup-backend/README.md`: Added "Rating History Sources" section documenting the two data series, query rules, and what not to touch.
+- `lineup-nextjs/FRONTEND_BACKEND_CONTRACT.md`: Added "Chart Endpoint — Rating History Sources" section.
+
+### Remaining Work
+
+| ID | Item | Status |
+|----|------|--------|
+| BL-1 | `gt=0` validator on buy/sell request schemas (prevent zero-budget trades) | 🟠 Still unverified — carry forward |

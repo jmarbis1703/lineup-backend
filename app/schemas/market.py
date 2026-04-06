@@ -5,6 +5,20 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class MatchFormEntry(BaseModel):
+    match_date: str        # "YYYY-MM-DD"
+    opponent: str          # the team that is not the player's team
+    home_away: str         # "H" or "A"
+    rating: float = 0.0   # sportmonks_rating, 0–10 scale
+    goals: int = 0
+    assists: int = 0
+    minutes: int = 0
+    shots_on_target: int = 0
+    xg: float = 0.0
+    saves: int = 0         # GK only — always included, frontend filters by position
+    clean_sheet: bool = False  # GK only — always included, frontend filters
+
+
 class PlayerMatchFormEntry(BaseModel):
     match_date: str  # "YYYY-MM-DD" — fixture kickoff date from Sportmonks starting_at (§9B); falls back to recorded_at for pre-0006 rows
     goals: int = 0
@@ -65,6 +79,7 @@ class PlayerStatsResponse(BaseModel):
     matches_available: int # how many matches the stats are based on (0-5)
     goals_conceded: int = 0  # GK: sum of goals conceded in last 5 matches
     tackles: int = 0         # sum of tackles in last 5 matches (all positions)
+    recent_matches: list[MatchFormEntry] = []  # last 5 matches, newest-first; [] until match data exists
 
 
 class PublicPlayerResponse(BaseModel):

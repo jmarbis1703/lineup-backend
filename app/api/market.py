@@ -22,6 +22,7 @@ from app.models.player_match_rating import PlayerMatchRating
 from app.models.rating_history import RatingHistory
 from app.schemas.market import (
     ChartPoint,
+    MatchFormEntry,
     PlayerMarketResponse,
     PlayerMatchFormEntry,
     PlayerStatsResponse,
@@ -128,6 +129,7 @@ async def _get_change_24h_map(
             .where(
                 RatingHistory.player_id.in_(player_ids),
                 RatingHistory.recorded_at <= cutoff,
+                RatingHistory.source.in_(["trade", "market_init"]),
             )
             .order_by(RatingHistory.player_id, RatingHistory.recorded_at.desc())
         )
@@ -438,11 +440,13 @@ async def get_player_stats(
         raise HTTPException(status_code=404, detail="Player not found")
 
     # Fetch last 5 player_match_ratings ordered by fixture kickoff_time DESC.
+    # Also join Player to derive opponent/home_away for MatchFormEntry.
     # Exclude fixture_id=0 (seed sentinel — season totals, not per-match).
-    rows = (
+    raw_rows = (
         await db.execute(
-            sa.select(PlayerMatchRating)
+            sa.select(PlayerMatchRating, Fixture, Player)
             .join(Fixture, PlayerMatchRating.fixture_id == Fixture.id)
+            .join(Player, PlayerMatchRating.player_id == Player.id)
             .where(
                 PlayerMatchRating.player_id == player_id,
                 PlayerMatchRating.fixture_id != 0,
@@ -450,9 +454,9 @@ async def get_player_stats(
             .order_by(Fixture.kickoff_time.desc())
             .limit(5)
         )
-    ).scalars().all()
+    ).all()
 
-    if not rows:
+    if not raw_rows:
         return PlayerStatsResponse(
             player_id=player_id,
             goals=0,
@@ -467,7 +471,12 @@ async def get_player_stats(
             matches_available=0,
             goals_conceded=0,
             tackles=0,
+            recent_matches=[],
         )
+
+    # Unpack tuples; rows are newest-first
+    rows = [pmr for pmr, _f, _p in raw_rows]
+    player_obj = raw_rows[0][2]
 
     # rows are newest-first; reverse for oldest-first form list
     rows_oldest_first = list(reversed(rows))
@@ -496,6 +505,42 @@ async def get_player_stats(
         if r.sportmonks_rating is not None
     ]
 
+    # Build recent_matches — newest-first, up to 5
+    team = player_obj.team or ""
+    recent_matches: list[MatchFormEntry] = []
+    for pmr, fixture, _ in raw_rows:
+        if team and fixture.home_team == team:
+            opponent = fixture.away_team or "Unknown"
+            home_away = "H"
+        elif team and fixture.away_team == team:
+            opponent = fixture.home_team or "Unknown"
+            home_away = "A"
+        else:
+            opponent = "Unknown"
+            home_away = "H"
+
+        if pmr.match_date:
+            md = pmr.match_date
+            match_date = md.strftime("%Y-%m-%d") if hasattr(md, "strftime") else str(md)
+        elif fixture.kickoff_time:
+            match_date = fixture.kickoff_time.date().strftime("%Y-%m-%d")
+        else:
+            match_date = ""
+
+        recent_matches.append(MatchFormEntry(
+            match_date=match_date,
+            opponent=opponent,
+            home_away=home_away,
+            rating=float(pmr.sportmonks_rating) if pmr.sportmonks_rating is not None else 0.0,
+            goals=pmr.goals or 0,
+            assists=pmr.assists or 0,
+            minutes=pmr.minutes_played or 0,
+            shots_on_target=pmr.shots_on_target or 0,
+            xg=float(pmr.xg or 0),
+            saves=pmr.saves or 0,
+            clean_sheet=bool(pmr.clean_sheet) if pmr.clean_sheet is not None else False,
+        ))
+
     vaep = 0.0  # TODO: awaiting Sportmonks event-level VAEP data
 
     return PlayerStatsResponse(
@@ -512,4 +557,5 @@ async def get_player_stats(
         matches_available=matches_available,
         goals_conceded=goals_conceded,
         tackles=tackles,
+        recent_matches=recent_matches,
     )

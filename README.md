@@ -938,4 +938,28 @@ regardless of quality. The activity filter (`_is_active()`) passes new players c
 **Proper fix (not yet implemented):** Two-pass import — upsert all candidates first, run
 `refresh_match_ratings`, then apply the standings-aware cap. See Remaining Work — Ranking Fix.
 
+---
+
+## Rating History Sources
+
+The `rating_history` table stores two **semantically distinct** data series in the same `rating` column, distinguished by the `source` field:
+
+| `source` value | Written by | What `rating` represents |
+|---------------|-----------|--------------------------|
+| `"trade"` | `core/trading.py` — on every user trade | LMSR market price (`lmsr_rating(q_up, q_down, b_eff)`) on 0.0–10.0 scale |
+| `"market_init"` | Market initialisation path | LMSR market price at market creation (same scale as `"trade"`) |
+| `"oracle_update"` | `workers/oracle_update.py` — every 10 min | Oracle match-performance score derived from Sportmonks stats (same 0.0–10.0 scale, but **not** an LMSR price) |
+
+### Query rules
+
+**Any query that computes a price-derived metric** (e.g. `change_24h` in `_get_change_24h_map()`) **must filter to `source IN ("trade", "market_init")`**. Including `oracle_update` rows will compare a match-performance score against an LMSR market price, producing spurious percentage changes of 30–70% with no user trades.
+
+**The chart endpoint** (`GET /api/market/players/{id}/chart`) intentionally returns all sources without filtering. The frontend renders `oracle_update` rows as dashed line segments at 55% opacity, labelled "Match Rating" in tooltips, distinct from the solid "Market Price" line. This makes the oracle/trade distinction visible to users.
+
+### Do not touch
+
+- Do **not** filter `oracle_update` rows out of the chart endpoint — they are returned deliberately.
+- Do **not** add `oracle_update` rows to price-derived metric calculations.
+- The `oracle_rating` field on `lmsr_market_state` is display-only (INV-09); oracle writes never modify `current_rating`.
+
 **Migration required:** No.
