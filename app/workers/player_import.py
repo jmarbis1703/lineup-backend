@@ -42,7 +42,7 @@ MATCH_RATING_LEAGUES: list[int] = [8, 82, 301, 384, 564]  # 8 = Premier League, 
 
 # Rolling window passed to refresh_match_ratings() by the beat task.
 # The CLI script (scripts/refresh_match_ratings.py) uses --days independently.
-MATCH_RATING_DAYS_BACK: int = 3
+MATCH_RATING_DAYS_BACK: int = 7
 
 
 
@@ -690,10 +690,14 @@ async def refresh_match_ratings(
                     away_team=away_name,
                     kickoff_time=kickoff,
                     status="finished",
+                    league_id=league_id,
                 )
                 db.add(db_fixture)
                 await db.flush()
                 fixtures_synced += 1
+            else:
+                if db_fixture.league_id is None:
+                    db_fixture.league_id = league_id
 
             # Process lineup entries
             lineups = fixture.get("lineups") or []
