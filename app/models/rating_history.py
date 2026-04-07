@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Index, Integer, Numeric, String, Uuid
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Numeric, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -16,6 +16,10 @@ class RatingHistory(Base):
     __tablename__ = "rating_history"
     __table_args__ = (
         Index("ix_rating_history_player_recorded", "player_id", "recorded_at"),
+        CheckConstraint(
+            "rating >= 0.0 AND rating <= 10.0",
+            name="ck_rating_history_rating_range",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

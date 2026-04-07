@@ -206,3 +206,30 @@ def test_q_within_dust_buffer_succeeds(session):
     session.add(_player(9)); session.flush()
     session.add(_market(9, q_up=Decimal("-0.005"), q_down=Decimal("-0.005")))
     session.flush()  # must not raise
+
+
+# ──────────────────── 5. rating_history CHECK constraint ─────────────────────
+
+def test_check_rating_history_above_10_fails(session):
+    """ck_rating_history_rating_range: rating > 10.0 must be rejected."""
+    session.add(RatingHistory(player_id=99, rating=Decimal("10.0001"), source="trade"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+
+
+def test_check_rating_history_below_0_fails(session):
+    """ck_rating_history_rating_range: rating < 0.0 must be rejected."""
+    session.add(RatingHistory(player_id=99, rating=Decimal("-0.0001"), source="trade"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+
+
+def test_check_rating_history_boundaries_succeed(session):
+    """ck_rating_history_rating_range: rating = 0.0 and rating = 10.0 must both be accepted."""
+    session.add_all([
+        RatingHistory(player_id=99, rating=Decimal("0.0000"), source="market_init"),
+        RatingHistory(player_id=99, rating=Decimal("10.0000"), source="market_init"),
+    ])
+    session.flush()  # must not raise

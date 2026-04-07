@@ -95,9 +95,10 @@ docker compose exec api alembic upgrade head
 > docker compose exec api alembic upgrade head
 > ```
 >
-> **Current migration chain:** `0001 → 0002 → 0003 → 0004 → 0005 → 0006`
+> **Current migration chain:** `0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007`
 > (0005 adds `invite_code VARCHAR(8) UNIQUE` to the `tournaments` table;
-> 0006 adds `match_date DateTime(timezone=True)` nullable column to `player_match_ratings`)
+> 0006 adds `match_date DateTime(timezone=True)` nullable column to `player_match_ratings`;
+> 0007 adds `CHECK (rating >= 0.0 AND rating <= 10.0)` to `rating_history`)
 
 ### 4. Import players
 
@@ -677,6 +678,19 @@ Known gap: match_date reflects upsert timestamp (recorded_at), not fixture
     - Dead auth schemas in app/schemas/auth.py archived with warning comment
     - Clerk secret key removed from lineup-nextjs/.env.local
     - .env.example files created in both projects with placeholder values only
+
+24. rating_history.rating CHECK constraint (BUG-05, 2026-04-07)
+    - Migration   : 0007_ratinghistory_rating_check.py
+    - Constraint  : ck_rating_history_rating_range — CHECK (rating >= 0.0 AND rating <= 10.0)
+    - Rationale   : rating_history.rating had no CHECK constraint despite all write paths
+                    constraining values to [0.0, 10.0]. This mirrors ck_lmsr_current_rating_range
+                    on lmsr_market_state.current_rating and catches data-quality violations at
+                    the DB layer.
+    - Write paths : market_init / trade: lmsr_rating() hard-clamps to [0.0, 10.0]
+                    oracle_update: Layer 2/3 clamp to [3.0, 10.0]; Layer 1 = Sportmonks 1–10 scale
+    - Model change: app/models/rating_history.py __table_args__ updated to include the constraint
+    - Tests added : test_check_rating_history_above_10_fails, test_check_rating_history_below_0_fails,
+                    test_check_rating_history_boundaries_succeed in tests/test_models.py
 
 ---
 
