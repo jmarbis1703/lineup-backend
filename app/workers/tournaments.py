@@ -61,7 +61,7 @@ def _compute_member_value(
         q_down = float(market.q_down)
         alpha = float(market.alpha)
         b_min = float(market.b_min)
-        b = effective_b(q_up, q_down, alpha, b_min)
+        b = effective_b(b_min, alpha, q_up, q_down)
         shares = float(pos.shares_owned)
         if pos.direction == "UP":
             refund = sell_refund_up(q_up, q_down, b, shares)

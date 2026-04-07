@@ -71,7 +71,7 @@ def _market(player_id: int, **kwargs) -> LmsrMarketState:
 
 # ─────────────────────────── 1. All 13 tables exist ──────────────────────────
 
-def test_all_13_tables_created(engine):
+def test_all_15_tables_created(engine):
     expected = {
         "users",
         "portfolios",
@@ -86,6 +86,8 @@ def test_all_13_tables_created(engine):
         "tournament_members",
         "tournament_snapshots",
         "liquidity_config",
+        "watchlists",
+        "portfolio_snapshots",
     }
     assert set(Base.metadata.tables.keys()) == expected
 

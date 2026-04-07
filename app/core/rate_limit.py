@@ -39,4 +39,5 @@ limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["200/minute"],
     storage_uri=settings.redis_url,
+    swallow_errors=True,  # Redis outage must not abort requests (returns 500 otherwise)
 )

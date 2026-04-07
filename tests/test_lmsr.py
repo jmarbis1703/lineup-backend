@@ -40,11 +40,11 @@ from app.core.calibration import calibrate_b_min
 class TestEffectiveB:
     def test_b_min_dominates_when_shares_low(self):
         """At zero shares, b_eff equals b_min exactly."""
-        assert effective_b(0.0, 0.0, alpha=0.05, b_min=100.0) == 100.0
+        assert effective_b(100.0, 0.05, 0.0, 0.0) == 100.0
 
     def test_b_min_still_visible_at_moderate_volume(self):
         """b_min component should be non-negligible at q_up=10, q_down=10."""
-        b = effective_b(10.0, 10.0, alpha=0.05, b_min=100.0)
+        b = effective_b(100.0, 0.05, 10.0, 10.0)
         # alpha*(10+10) = 1.0  <<  b_min = 100.0
         assert b == pytest.approx(101.0, rel=1e-9)
         assert b / 100.0 < 1.02   # b_min still dominates
@@ -52,27 +52,27 @@ class TestEffectiveB:
     def test_alpha_dominates_when_shares_high(self):
         """At very high volume, alpha*q >> b_min."""
         q = 100_000.0
-        b = effective_b(q, 0.0, alpha=0.05, b_min=100.0)
+        b = effective_b(100.0, 0.05, q, 0.0)
         alpha_component = 0.05 * q
         assert b == pytest.approx(100.0 + alpha_component, rel=1e-9)
         assert alpha_component > 100.0 * 40   # alpha clearly dominates (ratio = 50×)
 
     def test_always_positive_with_typical_inputs(self):
-        b = effective_b(500.0, 300.0, alpha=0.05, b_min=100.0)
+        b = effective_b(100.0, 0.05, 500.0, 300.0)
         assert b > 0
 
     def test_always_positive_with_dust_buffer_q(self):
         """Micro-negative q (Dust Buffer) must not drive b to zero."""
-        b = effective_b(-0.01, 50.0, alpha=0.05, b_min=100.0)
+        b = effective_b(100.0, 0.05, -0.01, 50.0)
         assert b > 0
 
     def test_alpha_zero_gives_constant_b(self):
-        b1 = effective_b(0.0, 0.0, alpha=0.0, b_min=50.0)
-        b2 = effective_b(1_000_000.0, 2_000_000.0, alpha=0.0, b_min=50.0)
+        b1 = effective_b(50.0, 0.0, 0.0, 0.0)
+        b2 = effective_b(50.0, 0.0, 1_000_000.0, 2_000_000.0)
         assert b1 == b2 == 50.0
 
     def test_scales_linearly_with_total_shares(self):
-        b = effective_b(100.0, 200.0, alpha=0.05, b_min=100.0)
+        b = effective_b(100.0, 0.05, 100.0, 200.0)
         assert b == pytest.approx(100.0 + 0.05 * 300.0, rel=1e-9)
 
 
@@ -174,14 +174,14 @@ class TestCalculateSharesForBudget:
         q_up, q_down, alpha, b_min = 0.0, 0.0, 0.05, 100.0
 
         # One big trade (b does not update mid-trade)
-        b_initial = effective_b(q_up, q_down, alpha, b_min)
+        b_initial = effective_b(b_min, alpha, q_up, q_down)
         shares_100 = calculate_shares_for_budget(q_up, q_down, b_initial, 100.0, True)
 
         # First tranche of 50
-        b1 = effective_b(q_up, q_down, alpha, b_min)
+        b1 = effective_b(b_min, alpha, q_up, q_down)
         shares_a = calculate_shares_for_budget(q_up, q_down, b1, 50.0, True)
         # b has grown — second tranche is in a deeper market
-        b2 = effective_b(q_up + shares_a, q_down, alpha, b_min)
+        b2 = effective_b(b_min, alpha, q_up + shares_a, q_down)
         shares_b = calculate_shares_for_budget(q_up + shares_a, q_down, b2, 50.0, True)
 
         total_split = shares_a + shares_b
@@ -387,8 +387,8 @@ class TestCalibrateBMin:
 
 class TestLSLMSRDynamics:
     def test_b_grows_with_volume(self):
-        b_initial = effective_b(0.0, 0.0, 0.05, 100.0)
-        b_after = effective_b(500.0, 200.0, 0.05, 100.0)
+        b_initial = effective_b(100.0, 0.05, 0.0, 0.0)
+        b_after = effective_b(100.0, 0.05, 500.0, 200.0)
         assert b_after > b_initial
 
     def test_early_trades_move_price_more_than_late_trades(self):
@@ -397,7 +397,7 @@ class TestLSLMSRDynamics:
         b_min, alpha, shares = 100.0, 0.05, 20.0
 
         # Early trade: market starts at (0, 0)
-        b_early = effective_b(0.0, 0.0, alpha, b_min)
+        b_early = effective_b(b_min, alpha, 0.0, 0.0)
         delta_early = (
             lmsr_rating(shares, 0.0, b_early)
             - lmsr_rating(0.0, 0.0, b_early)
@@ -405,7 +405,7 @@ class TestLSLMSRDynamics:
 
         # Late trade: market already has high volume
         q_up_high = 1_000.0
-        b_late = effective_b(q_up_high, 0.0, alpha, b_min)
+        b_late = effective_b(b_min, alpha, q_up_high, 0.0)
         delta_late = (
             lmsr_rating(q_up_high + shares, 0.0, b_late)
             - lmsr_rating(q_up_high, 0.0, b_late)
@@ -418,11 +418,11 @@ class TestLSLMSRDynamics:
     def test_effective_b_grows_across_successive_buys(self):
         """Simulate 10 sequential purchases and confirm b always grows."""
         q_up, q_down, alpha, b_min = 0.0, 0.0, 0.05, 100.0
-        b_prev = effective_b(q_up, q_down, alpha, b_min)
+        b_prev = effective_b(b_min, alpha, q_up, q_down)
         for _ in range(10):
             shares = calculate_shares_for_budget(q_up, q_down, b_prev, 50.0, True)
             q_up += shares
-            b_new = effective_b(q_up, q_down, alpha, b_min)
+            b_new = effective_b(b_min, alpha, q_up, q_down)
             assert b_new > b_prev
             b_prev = b_new
 
