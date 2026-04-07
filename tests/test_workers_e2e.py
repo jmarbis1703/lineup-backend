@@ -364,6 +364,17 @@ async def test_freeze_e2e_concurrent_idempotency() -> None:
     db_url = os.getenv("TEST_DATABASE_URL", os.getenv("DATABASE_URL", _FALLBACK))
     db_url = db_url.replace("+psycopg2", "+asyncpg")
 
+    # Guard: skip gracefully when PostgreSQL is unreachable (CI has no DB service).
+    # Every other DB test goes through conftest.py's apply_migrations fixture which
+    # catches this and calls pytest.skip(). This test bypasses that fixture because
+    # it builds its own engine, so we add the guard inline.
+    import socket as _socket
+    try:
+        _sock = _socket.create_connection(("localhost", 5432), timeout=1)
+        _sock.close()
+    except OSError as _exc:
+        pytest.skip(f"PostgreSQL not reachable — skipping concurrent idempotency test: {_exc}")
+
     engine = create_async_engine(db_url, pool_pre_ping=True)
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
