@@ -926,3 +926,176 @@ async def test_sell_inactive_player_succeeds(
     port_after = await _get_portfolio(db_session, user.id)
     # Started with 1000, spent 50, got refund back
     assert port_after.available_points == Decimal("1000.0000") - Decimal("50") + refund
+
+
+# ---------------------------------------------------------------------------
+# test_buy_zero_shares_from_tiny_budget  (INV-10 — Zero-shares phantom guard)
+# ---------------------------------------------------------------------------
+
+
+async def test_buy_zero_shares_from_tiny_budget(
+    db_session: AsyncSession,
+    sample_player_with_market,
+    api_client: AsyncClient,
+) -> None:
+    """
+    A budget too small to purchase even one micro-share (0.000001) must
+    return HTTP 400, NOT silently deduct the budget and record a 0-share trade.
+
+    In the test environment the b-floor is very high (~200 000) because there
+    are very few portfolio rows.  At that b_eff, the threshold budget needed to
+    receive at least one micro-share is roughly b_eff * 0.000001 / 0.5 ≈ 0.4
+    points.  A budget of 0.0001 is well below that threshold and will yield
+    shares_dec = Decimal("0.000000") after _d6() truncation — triggering the
+    ZeroSharesError guard (INV-10) before any DB writes occur.
+    """
+    user, portfolio = await _create_user_portfolio(db_session, "zero_shares_buyer")
+    headers = {"Authorization": f"Bearer {_make_token(user.id)}"}
+    budget = "0.0001"
+
+    resp = await api_client.post(
+        "/api/trade/buy",
+        json={"player_id": 99, "direction": "UP", "budget": budget},
+        headers=headers,
+    )
+    assert resp.status_code == 400, (
+        f"Expected 400 for zero-shares budget, got {resp.status_code}: {resp.text}"
+    )
+
+    # No points deducted — portfolio must be untouched
+    port_after = await _get_portfolio(db_session, user.id)
+    assert port_after.available_points == Decimal("1000.0000"), (
+        f"Portfolio was modified despite zero-shares budget: "
+        f"available_points={port_after.available_points}"
+    )
+
+    # No position created
+    pos = await _get_position(db_session, portfolio.id, 99, "UP")
+    assert pos is None, f"Position was created despite zero-shares budget: {pos}"
+
+
+# ---------------------------------------------------------------------------
+# test_buy_normal_budget_unaffected_by_zero_shares_guard
+# ---------------------------------------------------------------------------
+
+
+async def test_buy_normal_budget_unaffected_by_zero_shares_guard(
+    db_session: AsyncSession,
+    sample_player_with_market,
+    api_client: AsyncClient,
+) -> None:
+    """
+    Verify the ZeroSharesError guard does not interfere with normal trades.
+    A budget of 50 points must still succeed and return shares > 0.
+    """
+    user, portfolio = await _create_user_portfolio(db_session, "normal_buyer_guard")
+    headers = {"Authorization": f"Bearer {_make_token(user.id)}"}
+
+    resp = await api_client.post(
+        "/api/trade/buy",
+        json={"player_id": 99, "direction": "UP", "budget": 50.0},
+        headers=headers,
+    )
+    assert resp.status_code == 200, (
+        f"Normal buy unexpectedly rejected: {resp.status_code}: {resp.text}"
+    )
+    data = resp.json()
+    assert Decimal(str(data["shares"])) > 0, "Shares must be > 0 for a normal budget"
+
+
+# ---------------------------------------------------------------------------
+# test_sell_shares_extra_precision_truncated  (INV-10 — Sell precision guard)
+# ---------------------------------------------------------------------------
+
+
+async def test_sell_shares_extra_precision_truncated(
+    db_session: AsyncSession,
+    sample_player_with_market,
+    api_client: AsyncClient,
+) -> None:
+    """
+    A sell request with shares expressed to more than 6 decimal places must be
+    accepted when the value, after ROUND_DOWN truncation to 6dp, equals the
+    user's exact shares_owned.
+
+    Scenario:
+      1. Buy UP to acquire shares_owned (exactly 6dp — returned by execute_buy).
+      2. Append extra digits to shares_owned to create a >6dp representation.
+      3. POST /sell with this padded value.
+      4. Expect HTTP 200: the schema truncates to 6dp, matching shares_owned exactly.
+
+    Without the truncation validator, step 3 would succeed in Python Decimal
+    comparison (0.123456 < 0.123456001 → True → InsufficientSharesError),
+    trapping the user's full position because they sent one extra digit.
+    """
+    user, portfolio = await _create_user_portfolio(db_session, "precision_seller")
+    headers = {"Authorization": f"Bearer {_make_token(user.id)}"}
+
+    # Buy first
+    buy_resp = await api_client.post(
+        "/api/trade/buy",
+        json={"player_id": 99, "direction": "UP", "budget": 50.0},
+        headers=headers,
+    )
+    assert buy_resp.status_code == 200
+    shares_owned_str = buy_resp.json()["shares"]  # exact 6dp string from API
+
+    # Append three extra zeros and a 1 (9dp total) — truncation must recover the original
+    shares_padded = str(Decimal(shares_owned_str)) + "0001"
+
+    sell_resp = await api_client.post(
+        "/api/trade/sell",
+        json={"player_id": 99, "direction": "UP", "shares": shares_padded},
+        headers=headers,
+    )
+    assert sell_resp.status_code == 200, (
+        f"Sell with extra-precision shares rejected (expected truncation to succeed): "
+        f"{sell_resp.status_code}: {sell_resp.text}"
+    )
+    assert Decimal(str(sell_resp.json()["refund"])) > 0
+
+
+# ---------------------------------------------------------------------------
+# test_sell_shares_extra_precision_exceeds_owned  (INV-10 — negative case)
+# ---------------------------------------------------------------------------
+
+
+async def test_sell_shares_extra_precision_exceeds_owned(
+    db_session: AsyncSession,
+    sample_player_with_market,
+    api_client: AsyncClient,
+) -> None:
+    """
+    A sell request where shares, after truncation to 6dp, still exceed the
+    user's shares_owned must return HTTP 400 (InsufficientSharesError).
+
+    Scenario:
+      1. Buy UP to acquire shares_owned (e.g. 0.000500).
+      2. Send shares = shares_owned + 1 (clearly more than owned).
+      3. Expect HTTP 400.
+
+    This confirms the truncation validator does not create a bypass for
+    legitimately insufficient-share sells.
+    """
+    user, portfolio = await _create_user_portfolio(db_session, "overshoot_seller")
+    headers = {"Authorization": f"Bearer {_make_token(user.id)}"}
+
+    buy_resp = await api_client.post(
+        "/api/trade/buy",
+        json={"player_id": 99, "direction": "UP", "budget": 50.0},
+        headers=headers,
+    )
+    assert buy_resp.status_code == 200
+    shares_owned = Decimal(str(buy_resp.json()["shares"]))
+
+    # Attempt to sell more than owned (by 1 full share)
+    excess_shares = float(shares_owned + Decimal("1"))
+
+    sell_resp = await api_client.post(
+        "/api/trade/sell",
+        json={"player_id": 99, "direction": "UP", "shares": excess_shares},
+        headers=headers,
+    )
+    assert sell_resp.status_code == 400, (
+        f"Expected 400 for overshooting sell, got {sell_resp.status_code}: {sell_resp.text}"
+    )

@@ -202,9 +202,56 @@ Auth is handled entirely by Clerk (RS256 JWT in `Authorization: Bearer <token>`)
 
 | Method | Path | Response model | Data status |
 |--------|------|---------------|-------------|
-| `POST` | `/api/trade/buy` | `BuyResponse` | **LIVE** — 403 if player inactive, 400 if insufficient points |
+| `POST` | `/api/trade/buy` | `BuyResponse` | **LIVE** — 403 if player inactive, 400 if insufficient points or zero shares |
 | `POST` | `/api/trade/sell` | `SellResponse` | **LIVE** — sell always permitted even on inactive players (close-only mode) |
 | `POST` | `/api/trade/preview` | `PreviewResponse` | **LIVE** — no DB writes |
+
+#### Trading Validation Layer (Session 18)
+
+All three endpoints are rate-limited at **30 requests/minute per authenticated user** (keyed by JWT `sub`). Rate limiting was previously missing from `/api/trade/preview`.
+
+##### Request validation (schema layer — `app/schemas/trade.py`)
+
+| Field | Constraint | Error |
+|-------|-----------|-------|
+| `budget` (buy/preview) | `> 0` (Decimal) | 422 |
+| `shares` (sell) | `> 0` (Decimal), **truncated to 6 decimal places** before further validation | 422 |
+| `direction` | `"UP"` or `"DOWN"` (Literal) | 422 |
+| `player_id` | integer | 422 |
+
+The `shares` truncation rule: incoming share values are truncated (ROUND_DOWN) to 6 decimal places to match the `NUMERIC(14,6)` precision used in `positions.shares_owned`. A value like `0.1234567` becomes `0.123456`. If the truncated value is `0`, validation fails with 422.
+
+##### Business logic validation (core layer — `app/core/trading.py`)
+
+| Invariant | Guard | HTTP code |
+|-----------|-------|----------|
+| INV-02: balance sufficient | `budget > available_points` → `InsufficientPointsError` | 400 |
+| INV-03: shares owned | `shares > shares_owned` → `InsufficientSharesError` | 400 |
+| INV-06: Dust Buffer | `q - shares < -0.01` → `DustBufferError` | 400 |
+| INV-10: non-zero shares | quantised shares = 0 → `ZeroSharesError` | 400 |
+| Close-only mode | `player.is_active = False` on buy → `InactivePlayerError` | 403 |
+| Player exists | no player row → `PlayerNotFoundError` | 404 |
+| Market exists | no market row → `MarketNotFoundError` | 404 |
+
+**INV-10 (Zero-shares guard):** If `budget` is so small that the LMSR computation yields fewer than `0.000001` shares (the minimum representable in `NUMERIC(14,6)`), the engine raises `ZeroSharesError` **before any database writes**. The user's balance is never touched. This prevents a phantom deduction where budget is charged but no shares are received.
+
+##### Error response shape
+
+All trading errors return standard FastAPI JSON:
+
+```json
+{ "detail": "human-readable message describing the problem" }
+```
+
+No internal state, stack traces, or raw exceptions are exposed.
+
+##### Transaction safety
+
+`execute_buy` and `execute_sell` use `SELECT ... FOR UPDATE` with a fixed lock order:
+1. `portfolios` row (per-user)
+2. `lmsr_market_state` row (per-player)
+
+This order prevents deadlocks under concurrent buys by different users. On exception, the session is rolled back by the `get_db()` dependency's `async with` context manager before any lock is released.
 
 ### Portfolio (auth required)
 

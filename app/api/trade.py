@@ -20,6 +20,7 @@ from app.core.trading import (
     InsufficientSharesError,
     MarketNotFoundError,
     PlayerNotFoundError,
+    ZeroSharesError,
     execute_buy,
     execute_sell,
     preview_buy,
@@ -68,6 +69,10 @@ async def buy(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except InsufficientPointsError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except ZeroSharesError as exc:
+        # Budget accepted by Pydantic (> 0) but too small to allocate any shares
+        # at the current market price. No DB writes occurred.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except PlayerNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except MarketNotFoundError as exc:
@@ -109,7 +114,9 @@ async def sell(
 
 
 @router.post("/preview", response_model=PreviewResponse)
+@limiter.limit("30/minute", key_func=_get_user_id_key)
 async def preview(
+    request: Request,
     req: PreviewRequest,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -117,6 +124,9 @@ async def preview(
     """
     Preview a buy without executing it (no DB writes, no locks).
     Returns projected shares, cost, and rating_after.
+
+    Rate-limited at 30/minute per user (same as buy/sell) to prevent
+    excessive DB queries from repeated preview calls.
     """
     try:
         result = await preview_buy(db, req.player_id, req.direction, req.budget)

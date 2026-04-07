@@ -80,6 +80,19 @@ class MarketNotFoundError(Exception):
     pass
 
 
+class ZeroSharesError(Exception):
+    """Budget too small — quantised share allocation is zero (INV-10).
+
+    Raised in execute_buy when the computed shares, after truncation to 6
+    decimal places (NUMERIC(14,6) precision), equal exactly zero.  Proceeding
+    would deduct the budget from the portfolio and record a trade with zero
+    shares, permanently losing the user's points with nothing in return.
+
+    The caller should surface this as HTTP 400 with a user-facing message
+    explaining that the budget is below the minimum effective trade size.
+    """
+
+
 # ---------------------------------------------------------------------------
 # execute_buy
 # ---------------------------------------------------------------------------
@@ -172,6 +185,20 @@ async def execute_buy(
     # ------------------------------------------------------------------
     shares_dec = _d6(raw_shares)
     shares_f = float(shares_dec)
+
+    # ------------------------------------------------------------------
+    # 6a. Zero-shares guard (INV-10 — Phantom Deduction prevention)
+    #
+    #     If the budget is so small that no shares survive 6-dp truncation,
+    #     proceeding would deduct the budget and record a 0-share trade —
+    #     permanently losing the user's points with nothing in return.
+    #     Raise before ANY database writes so the portfolio is never touched.
+    # ------------------------------------------------------------------
+    if shares_dec == Decimal("0"):
+        raise ZeroSharesError(
+            "Budget too small — no shares can be allocated at the current market "
+            "price. Increase your budget or try a more active market."
+        )
 
     # ------------------------------------------------------------------
     # 7. Rating before trade
