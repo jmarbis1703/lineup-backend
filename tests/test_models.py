@@ -53,7 +53,7 @@ def session(engine):
 # ─────────────────────────── Object factories ────────────────────────────────
 
 def _user(tag: str) -> User:
-    return User(email=f"{tag}@test.com", password_hash="hashed", username=tag)
+    return User(email=f"{tag}@test.com", username=tag)
 
 
 def _player(pid: int) -> Player:

@@ -60,7 +60,6 @@ async def _make_user_portfolio(
 ) -> tuple[User, Portfolio]:
     user = User(
         email=f"{prefix}@e2e.test",
-        password_hash="$2b$12$testhashplaceholderfortestingonly",
         username=prefix,
     )
     db.add(user)
@@ -379,7 +378,6 @@ async def test_freeze_e2e_concurrent_idempotency() -> None:
         async with SessionLocal() as setup_db:
             creator = User(
                 email="cidmp_creator@e2e.test",
-                password_hash="$2b$12$testhashplaceholderfortestingonly",
                 username="cidmp_creator",
             )
             setup_db.add(creator)
@@ -400,7 +398,6 @@ async def test_freeze_e2e_concurrent_idempotency() -> None:
             for idx in range(member_count):
                 member = User(
                     email=f"cidmp_m{idx}@e2e.test",
-                    password_hash="$2b$12$testhashplaceholderfortestingonly",
                     username=f"cidmp_m{idx}",
                 )
                 setup_db.add(member)
