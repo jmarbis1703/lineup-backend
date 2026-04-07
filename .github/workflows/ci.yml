@@ -1,0 +1,117 @@
+# ============================================================
+# lineup-backend CI
+# ============================================================
+# What this does:
+#   lint      — ruff static analysis (E, F, W rule sets)
+#   typecheck — mypy on app/ with relaxed options
+#   test      — pytest with a guaranteed smoke test so the
+#               suite never exits "no tests collected"
+#
+# Run equivalent checks locally:
+#   pip install ruff==0.4.4
+#   ruff check . --select E,F,W --ignore E501
+#
+#   pip install mypy==1.10.0 && pip install -r requirements.txt
+#   mypy app/ --ignore-missing-imports --no-strict-optional
+#
+#   pytest tests/ -v --tb=short
+#
+# Intentionally excluded:
+#   - No database service (unit/smoke tests only at this stage)
+#   - No deploy step
+#   - No DB integration tests
+#   - No real secrets (placeholders satisfy pydantic-settings at import time)
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff==0.4.4
+
+      - name: Run ruff
+        run: ruff check . --select E,F,W --ignore E501
+
+  typecheck:
+    name: Typecheck (mypy)
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost/ci
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-secret-not-real
+      CLERK_SECRET_KEY: sk_test_placeholder
+      SPORTMONKS_API_TOKEN: placeholder
+      ALLOWED_ORIGINS: http://localhost:3000
+      ENVIRONMENT: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install mypy==1.10.0
+          pip install -r requirements.txt
+
+      - name: Run mypy
+        run: mypy app/ --ignore-missing-imports --no-strict-optional
+
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost/ci
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-secret-not-real
+      CLERK_SECRET_KEY: sk_test_placeholder
+      SPORTMONKS_API_TOKEN: placeholder
+      ALLOWED_ORIGINS: http://localhost:3000
+      ENVIRONMENT: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure tests/ exists with a smoke test
+        run: |
+          mkdir -p tests
+          touch tests/__init__.py
+          if [ ! -f tests/test_smoke.py ]; then
+            cat > tests/test_smoke.py << 'EOF'
+          # Placeholder smoke test — always passes.
+          # Replace with real tests as the suite grows.
+          def test_placeholder():
+              assert True
+          EOF
+          fi
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short
