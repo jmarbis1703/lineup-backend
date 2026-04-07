@@ -106,6 +106,25 @@ def rsa_test_keys() -> dict:
 
 
 @pytest.fixture(autouse=True)
+def disable_rate_limiting(monkeypatch) -> None:
+    """
+    Replace SlowAPIMiddleware.dispatch with a passthrough for all tests.
+
+    SlowAPI only sets request.state.view_rate_limit when a route is decorated
+    with @limiter.limit().  Undecorated routes (e.g. /health) never get that
+    attribute, so the middleware raises AttributeError in tests where Redis is
+    absent.  A passthrough here avoids the Redis dependency entirely without
+    touching production code.
+    """
+    from slowapi.middleware import SlowAPIMiddleware
+
+    async def _passthrough(self, request, call_next):
+        return await call_next(request)
+
+    monkeypatch.setattr(SlowAPIMiddleware, "dispatch", _passthrough)
+
+
+@pytest.fixture(autouse=True)
 def patch_clerk_jwks(monkeypatch, rsa_test_keys: dict) -> None:
     """
     Patch ``_fetch_jwks`` in app.core.auth so every test uses the local RSA
