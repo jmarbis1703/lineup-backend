@@ -95,10 +95,11 @@ docker compose exec api alembic upgrade head
 > docker compose exec api alembic upgrade head
 > ```
 >
-> **Current migration chain:** `0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007`
+> **Current migration chain:** `0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008`
 > (0005 adds `invite_code VARCHAR(8) UNIQUE` to the `tournaments` table;
 > 0006 adds `match_date DateTime(timezone=True)` nullable column to `player_match_ratings`;
-> 0007 adds `CHECK (rating >= 0.0 AND rating <= 10.0)` to `rating_history`)
+> 0007 adds `CHECK (rating >= 0.0 AND rating <= 10.0)` to `rating_history`;
+> 0008 creates the `waitlist_signups` table for the public waitlist)
 
 ### 4. Import players
 
@@ -165,6 +166,13 @@ Key test files:
 ## API Endpoints
 
 Auth is handled entirely by Clerk (RS256 JWT in `Authorization: Bearer <token>`). There are no register/login endpoints — user rows are created by the Clerk webhook at `POST /api/webhooks/clerk`.
+
+### Waitlist (public — no auth)
+
+| Method | Path | Request body | Response model | Notes |
+|--------|------|-------------|---------------|-------|
+| `POST` | `/api/waitlist/join` | `{email: str, referred_by: str\|null}` | `WaitlistJoinResponse` | Rate-limited 5/min per IP. 409 if email exists. Increments referrer position by -10 (flat) if `referred_by` matches a valid `referral_code`. Returns `{email, position, referral_code, waitlist_count}`. |
+| `GET` | `/api/waitlist/count` | — | `WaitlistCountResponse` | Returns `{count: int}`. Used by frontend live counter. |
 
 ### Market (public — no auth)
 

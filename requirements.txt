@@ -34,3 +34,6 @@ pytest-asyncio==1.3.0
 
 # --- Dev/audit tools ---
 pip-audit==2.10.0
+
+# ----- email val -----
+email-validator==2.3.0

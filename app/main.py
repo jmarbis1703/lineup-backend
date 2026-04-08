@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api import auth, fixtures, leaderboard, market, portfolio, tournament, trade, watchlist, webhooks, websocket
+from app.api import auth, fixtures, leaderboard, market, portfolio, tournament, trade, waitlist, watchlist, webhooks, websocket
 from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+    app.include_router(waitlist.router, prefix="/api/waitlist", tags=["waitlist"])
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     app.include_router(market.router, prefix="/api/market", tags=["market"])
     app.include_router(trade.router, prefix="/api/trade", tags=["trade"])
