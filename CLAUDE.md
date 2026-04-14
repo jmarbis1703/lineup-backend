@@ -1,3 +1,20 @@
+## Graphify — Knowledge Graph (READ THIS FIRST)
+
+Before using Glob, Grep, or Read on more than 2 files: check if 
+graphify-out/graph.json exists. If it does, read 
+graphify-out/GRAPH_REPORT.md first. Only read raw files for 
+specific nodes the graph points to. For "how does X work" or 
+"where is Y" questions, check graphify-out/wiki/index.md first.
+
+After completing any task where 5+ files were modified: print 
+this reminder at the end of your response:
+"⚠️ graphify: run `.venv/Scripts/graphify update .` before 
+next session — [N] files changed."
+
+Do NOT run graphify update automatically mid-task.
+
+---
+
 # LineUp Backend — Project Onboarding
 
 ## Overview
@@ -92,11 +109,74 @@ tests/           # pytest test suite
 ## Completed Work (do not revisit)
 - Session 17 — DEP-1: Baseline CI for lineup-backend — COMPLETE
 - Session 17 — DEP-1: Baseline CI for lineup-nextjs — COMPLETE
+- Session 19 — Skills Framework Installation — COMPLETE
+  - emilkowalski/skill installed at ~/.claude/skills/
+  - pbakaus/impeccable installed at ~/.claude/skills/
+  - Leonxlnx/taste-skill installed at ~/.claude/skills/
+  - obra/superpowers installed at ~/.claude/skills/
+  - AGENT_RULES.md created at ~/.claude/skills/AGENT_RULES.md
+  - code-review and security-guidance plugins already present
+  - claude-mem (404) replaced by built-in memory system
+- Session 19 — startup_landing_page_blueprint.md — COMPLETE
+  - Research document created covering waitlist page strategy,
+    investor appeal, conversion psychology, case studies
+    (Robinhood, Superhuman, Notion, Monzo)
+  - Saved to project files for Claude Code reference
+  - Includes full wireframe and implementation notes
+- Session 19 — Migration 0008 (waitlist_signups) — COMPLETE
+  - New table: waitlist_signups
+  - Columns: id, email, referral_code, referred_by,
+    position, referral_count, created_at
+  - Indexes on email and referral_code
+  - Applied to production: alembic current shows 0008 (head)
+- Session 19 — Waitlist API Endpoints — COMPLETE
+  - POST /api/waitlist/join (no auth, 5/min rate limit)
+    → validates email, generates UUID referral_code,
+      assigns position, increments referrer +10 spots flat
+    → returns WaitlistJoinResponse
+  - GET /api/waitlist/count (no auth, public)
+    → returns WaitlistCountResponse {count: int}
+  - Both registered in main.py before auth routes
+  - CORS confirmed working from lineupmarkets.com origin
+- Session 19 — Waitlist Landing Page — COMPLETE
+  - Route: lineup-nextjs/app/(public)/waitlist/page.tsx
+  - Confirmed page: app/(public)/waitlist/confirmed/page.tsx
+  - Public layout: app/(public)/layout.tsx (no Clerk)
+  - Root page.tsx replaced with redirect('/waitlist')
+  - Original preserved as app/page.original.tsx
+  - Brand tokens added to tailwind.config.ts
+  - Logo files added to public/
+  - Favicon.svg created
+  - Live at: https://lineupmarkets.com/waitlist
+  - API_BASE hardcoded to https://api.lineupmarkets.com
+    (NEXT_PUBLIC_* vars not available at Docker build time
+    for this route — hardcoded is correct pattern)
+- Session 19 — Beta Coexistence Confirmed — COMPLETE
+  - Clerk Restricted Mode remains ON
+  - app/(protected)/ untouched and fully operational
+  - Waitlist and beta are completely separate surfaces
+  - No links between waitlist and beta in either direction
 
 ---
 
 ## Remaining Work — In Priority Order
 <!-- DEP-1 (baseline CI) removed — completed Session 17 -->
+
+⚪ Session 20 — Waitlist Visual Redesign
+  - 3D floating player card in hero (Lamine Yamal)
+  - Real PlayerCard visual pattern recreated for waitlist
+  - How It Works section: real app UI previews per step
+  - Logo size increase (120px → 160px)
+  - 3D depth system across all sections
+  - Dot grid background on off-white sections
+  - Prompt is fully written and ready to paste to Claude Code
+
+⚪ Ranking Fix — Two-pass import (standings-aware)
+⚪ Fixture Sync — Backfill finished matches
+⚪ BUG-06 — recent_matches not in lib/types.ts
+⚪ Mobile hover — touch devices
+⚪ Oracle line tooltip rename
+⚪ Step 6 — Bio/Play Style sync
 
 ---
 
@@ -122,6 +202,44 @@ lineup-nextjs/.github/workflows/ci.yml
   Frontend: tsc --noEmit, eslint direct invocation, next build.
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must be set as a GitHub Actions
   repository secret in lineup-nextjs repo settings.
+
+- Waitlist API endpoints are public (no Clerk JWT required):
+  POST /api/waitlist/join and GET /api/waitlist/count.
+  Both registered before auth routes in main.py.
+
+- Waitlist frontend API_BASE is hardcoded to
+  'https://api.lineupmarkets.com' in
+  app/(public)/waitlist/page.tsx — do NOT change to an
+  env var without also ensuring the var is available as
+  a Docker build ARG in docker-compose.prod.yml.
+
+- Logo files in lineup-nextjs/public/:
+  - logo-orange.png: navbar and footer (light sections)
+  - logo-orange-on-white.png: dark Section G only
+  Note: logo-orange-on-white-bg.png does NOT exist —
+  the correct filename is logo-orange-on-white.png
+
+- Waitlist referral position formula:
+  referrer.position = max(1, referrer.position - 10)
+  Flat 10 spots per successful referral.
+  Tier display: 1 ref = +10, 3 refs = +40, 5 refs = priority.
+
+- Root page.tsx redirect chain:
+  / → redirect('/waitlist') → app/(public)/waitlist/page.tsx
+  Original landing page preserved at app/page.original.tsx
+
+- Migration state:
+  Current head: 0008
+  Chain: 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
+
+- Waitlist signups in production DB:
+  Check count via: curl https://api.lineupmarkets.com/api/waitlist/count
+  Or via DB: SELECT COUNT(*) FROM waitlist_signups;
+
+- Skills framework location: ~/.claude/skills/
+  AGENT_RULES.md governs automatic skill invocation.
+  All four design skills must be read before any frontend task.
+  frontend-design skill is highest priority, applied first.
 
 ---
 

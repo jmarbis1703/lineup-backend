@@ -47,6 +47,9 @@ fetch_test_player.py
 celerybeat-schedule
 celerybeat.pid
 
+# Graphify knowledge graph cache (local only)
+graphify-out/
+
 # Logs
 *.log
 
@@ -55,3 +58,7 @@ celerybeat.pid
 .idea/
 *.swp
 *.swo
+
+# Runtime noise
+nohup.out
+
