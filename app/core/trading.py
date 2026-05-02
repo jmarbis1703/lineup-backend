@@ -202,8 +202,10 @@ async def execute_buy(
 
     # ------------------------------------------------------------------
     # 7. Rating before trade
+    #    Use b_min (canonical coordinate space) — q values were seeded at
+    #    b_min scale. b_eff (with b_floor) is only for cost calculation.
     # ------------------------------------------------------------------
-    rating_before = _d4(lmsr_rating(q_up_f, q_down_f, b))
+    rating_before = _d4(lmsr_rating(q_up_f, q_down_f, b_min_f))
 
     # ------------------------------------------------------------------
     # 8. Update q vectors using exact Decimal arithmetic, then rating
@@ -215,8 +217,7 @@ async def execute_buy(
         new_q_up = market.q_up
         new_q_down = market.q_down + shares_dec
 
-    b_new = effective_b(b_min_f, alpha_f, float(new_q_up), float(new_q_down), b_floor=b_floor_f)
-    rating_after = _d4(lmsr_rating(float(new_q_up), float(new_q_down), b_new))
+    rating_after = _d4(lmsr_rating(float(new_q_up), float(new_q_down), b_min_f))
 
     market.q_up = new_q_up
     market.q_down = new_q_down
@@ -392,8 +393,10 @@ async def execute_sell(
     # ------------------------------------------------------------------
     # 5. LS-LMSR sell refund (pure math — accounts for AMM slippage)
     #    Linear multiplication is FORBIDDEN (PRD §2.6).
+    #    Rating uses b_min (canonical coordinate space); refund uses b
+    #    (with b_floor) for economic stability.
     # ------------------------------------------------------------------
-    rating_before = _d4(lmsr_rating(q_up_f, q_down_f, b))
+    rating_before = _d4(lmsr_rating(q_up_f, q_down_f, b_min_f))
 
     if direction == "UP":
         refund_f = sell_refund_up(q_up_f, q_down_f, b, shares_f)
@@ -404,8 +407,7 @@ async def execute_sell(
         new_q_up = market.q_up
         new_q_down = market.q_down - shares
 
-    b_new = effective_b(b_min_f, alpha_f, float(new_q_up), float(new_q_down), b_floor=b_floor_f)
-    rating_after = _d4(lmsr_rating(float(new_q_up), float(new_q_down), b_new))
+    rating_after = _d4(lmsr_rating(float(new_q_up), float(new_q_down), b_min_f))
     refund = _d6(refund_f)
 
     # ------------------------------------------------------------------
@@ -505,8 +507,7 @@ async def preview_buy(
         new_q_up_f = q_up_f
         new_q_down_f = q_down_f + shares_f
 
-    b_new = effective_b(b_min_f, alpha_f, new_q_up_f, new_q_down_f, b_floor=b_floor_f)
-    rating_after = _d4(lmsr_rating(new_q_up_f, new_q_down_f, b_new))
+    rating_after = _d4(lmsr_rating(new_q_up_f, new_q_down_f, b_min_f))
 
     return {
         "shares": shares_dec,
