@@ -61,7 +61,7 @@ async def get_my_portfolio(
     for position, market in rows:
         q_up = float(market.q_up)
         q_down = float(market.q_down)
-        b = effective_b(q_up, q_down, float(market.alpha), float(market.b_min))
+        b = effective_b(float(market.b_min), float(market.alpha), q_up, q_down)
         shares = float(position.shares_owned)
         avg_entry = float(position.average_entry_price)
 

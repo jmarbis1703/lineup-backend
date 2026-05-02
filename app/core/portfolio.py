@@ -58,7 +58,7 @@ async def calculate_total_value(
         q_down_f = float(market.q_down)
         alpha_f = float(market.alpha)
         b_min_f = float(market.b_min)
-        b = effective_b(q_up_f, q_down_f, alpha_f, b_min_f)
+        b = effective_b(b_min_f, alpha_f, q_up_f, q_down_f)
         shares_f = float(position.shares_owned)
 
         if position.direction == "UP":

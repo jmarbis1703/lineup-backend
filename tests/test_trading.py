@@ -240,7 +240,7 @@ async def test_buy_budget_roundtrip(
     q_down_orig = 0.0
     alpha = 0.05
     b_min = 100.0
-    b = effective_b(q_up_orig, q_down_orig, alpha, b_min)
+    b = effective_b(b_min, alpha, q_up_orig, q_down_orig)
     expected_shares = calculate_shares_for_budget(
         q_up_orig, q_down_orig, b, float(budget), True
     )

@@ -180,10 +180,10 @@ def _build_response(
     stats: Optional[dict] = None,
 ) -> PlayerMarketResponse:
     b_eff = effective_b(
+        float(market.b_min),
+        float(market.alpha),
         float(market.q_up),
         float(market.q_down),
-        float(market.alpha),
-        float(market.b_min),
     )
     league = player.league or (
         _LEAGUE_ID_TO_NAME.get(player.league_id) if player.league_id else None
@@ -273,8 +273,8 @@ async def get_trending_players(
 
     b_eff_map: dict[int, float] = {
         player.id: effective_b(
+            float(market.b_min), float(market.alpha),
             float(market.q_up), float(market.q_down),
-            float(market.alpha), float(market.b_min),
         )
         for player, market in rows
     }
@@ -322,8 +322,8 @@ async def get_players(
 
     b_eff_map: dict[int, float] = {
         player.id: effective_b(
+            float(market.b_min), float(market.alpha),
             float(market.q_up), float(market.q_down),
-            float(market.alpha), float(market.b_min),
         )
         for player, market in rows
     }
@@ -379,8 +379,8 @@ async def get_player(
         ).all()
         b_eff_map_all: dict[int, float] = {
             pid: effective_b(
+                float(ms.b_min), float(ms.alpha),
                 float(ms.q_up), float(ms.q_down),
-                float(ms.alpha), float(ms.b_min),
             )
             for pid, ms in all_rows
         }
