@@ -309,7 +309,7 @@ async def test_freeze_e2e_lmsr_profit_loss_and_idempotency(
     # Verify profit_loss uses LS-LMSR sell_refund, not naive shares * price
     # Naive: 200 * (q_up / (q_up + q_down)) * 10  (rough price proxy)
     # Real: sell_refund_up(500, 0, 100, 200) computed below
-    b = effective_b(500.0, 0.0, 0.0, 100.0)
+    b = effective_b(100.0, 0.0, 500.0, 0.0)
     expected_refund = sell_refund_up(500.0, 0.0, b, 200.0)
     expected_total_value = float(Decimal("500.0000")) + expected_refund
 

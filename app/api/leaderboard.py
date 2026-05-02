@@ -51,7 +51,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> list[Leaderboar
                 continue
             q_up = float(market.q_up)
             q_down = float(market.q_down)
-            b = effective_b(q_up, q_down, float(market.alpha), float(market.b_min))
+            b = effective_b(float(market.b_min), float(market.alpha), q_up, q_down)
             shares = float(pos.shares_owned)
             if pos.direction == "UP":
                 refund = sell_refund_up(q_up, q_down, b, shares)
